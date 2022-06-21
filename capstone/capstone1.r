@@ -54,3 +54,7 @@ removed <- anti_join(temp, validation)
 edx <- rbind(edx, removed)
 
 rm(dl, ratings, movies, test_index, temp, movielens, removed)
+
+# Save in case R crashes
+save(edx, file="/Users/willmee/dev/rlang/edx-datasci/data/movielens-capstone.Rda")
+save(validation, file="/Users/willmee/dev/rlang/edx-datasci/data/movielens-capstone-validation.Rda")

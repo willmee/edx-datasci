@@ -14,18 +14,121 @@ rmse <- function(true_ratings, predicted_ratings) {
   sqrt(mean((true_ratings - predicted_ratings)^2))
 }
 
-# simple model of means of all ratings
-pred_1 <- edx %>%
+# zero-model: just use the mean
+mu_hat <- mean(edx$rating)
+# 3.512465
+mu_hat
+
+pred_0 <- rep(mu_hat, nrow(validation))
+
+# Prediction 0 (Baseline) is 1.061202
+rmse(validation$rating, pred_0)
+
+# simple model of means of all ratings per movie 
+mu <- mean(edx$rating)
+movie_bias <- edx %>%
   group_by(movieId) %>%
-  summarize(prediction = mean(rating))
+  summarize(biasMovie = mean(rating)-mu)
 
-y_hat_1 = pred_1$prediction
+pred_1 <- validation %>%
+  left_join(movie_bias, by='movieId') %>%
+  pull(biasMovie)
 
-names(y_hat_1) <- as.character(pred_1$movieId)
-y_hat_1[2]
+pred_1 <- pred_1 + mu
 
-valid_1 <- validation %>%
-  mutate(prediction = y_hat_1[movieId]) %>%
-  select(movieId, rating, prediction)
+# Prediction 1: 0.9439087
+rmse(validation$rating, pred_1)
 
-rmse(head(valid_1$rating), head(as.vector(valid_1$prediction)))
+# User bias model
+user_bias <- edx %>%
+  left_join(movie_bias, by='movieId') %>%
+  group_by(userId) %>%
+  summarize(biasUser = mean(rating-mu-biasMovie)) 
+
+pred_2 <- validation %>%
+  left_join(movie_bias, by='movieId') %>%
+  left_join(user_bias, by='userId') %>%
+  mutate(prediction = mu + biasMovie + biasUser) %>%
+  pull(prediction)
+
+# Prediction 2: 0.8653488
+rmse(validation$rating, pred_2)
+
+# regularization - just movie
+
+# get a good value of the lambda parameter from the test data only, using the
+# same approach as the main edx dataframe
+set.seed(51, sample.kind="Rounding")
+test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
+edx_train <- edx[-test_index,]
+temp <- edx[test_index,]
+
+edx_test <- temp %>% 
+  semi_join(edx_train, by = "movieId") %>%
+  semi_join(edx_train, by = "userId")
+
+removed <- anti_join(temp, edx_test)
+edx_train <- rbind(edx_train, removed)
+
+regularized_prediction_movie <- function(lambda, train, test) {
+  reg_mu <- mean(train$rating)
+  movie_bias_regularized <- train %>%
+    group_by(movieId) %>%
+    summarize(biasMovie = sum(rating - reg_mu)/(lambda + n()))
+  
+  pred <- reg_mu + test %>%
+    left_join(movie_bias_regularized, by='movieId') %>%
+    pull(biasMovie)
+  
+  rmse(test$rating, pred)
+}
+
+lambdas <- seq(0, 5, 0.25)
+rmses_regularized_movie <- sapply(lambdas, function(x) {
+  regularized_prediction_movie(x, edx_train, edx_test)
+  }
+)
+plot(lambdas, rmses_regularized_movie)
+lambda <- lambdas[which.min(rmses_regularized_movie)]
+# Prediction 3: regularization, just movie 
+# 0.9438542
+regularized_prediction_movie(lambda, edx, validation)
+
+# regularization with movie and user
+regularized_prediction_movie_user <- function(lambda, train, test) {
+  reg_mu <- mean(train$rating)
+
+  movie_bias_regularized <- train %>%
+    group_by(movieId) %>%
+    summarize(biasMovie = sum(rating - reg_mu)/(lambda + n()))
+  
+  user_bias_regularized <- train %>%
+    left_join(movie_bias_regularized, by='movieId') %>%
+    group_by(userId) %>%
+    summarize(biasUser = sum(rating - reg_mu - biasMovie)/(lambda + n())) 
+  
+  pred <- test %>%
+    left_join(movie_bias_regularized, by='movieId') %>%
+    left_join(user_bias_regularized, by='userId') %>%
+    mutate(pred = reg_mu + biasUser + biasMovie) %>%
+    pull(pred)
+  
+  rmse(test$rating, pred)
+}
+
+# Prediction 4: regularization with movie and user with arbitrary lambda
+# 0.8650119
+regularized_prediction_movie_user(lambda, edx, validation)
+
+lambdas <- seq(3, 10, 0.1)
+rmses_regularized_movie_user <- sapply(lambdas, function(x) {
+  regularized_prediction_movie_user(x, edx_train, edx_test)
+}
+)
+plot(lambdas, rmses_regularized_movie_user)
+lambda <- lambdas[which.min(rmses_regularized_movie_user)]
+# optimal lambda is 5.0
+
+# Prediction 5: regularization with movie and user and optimal lambda
+# 0.8648177
+regularized_prediction_movie_user(lambda, edx, validation)

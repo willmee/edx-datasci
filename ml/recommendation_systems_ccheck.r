@@ -1,7 +1,7 @@
 library(tidyverse)
 library(lubridate)
 library(dslabs)
-library(plyr)
+library(dplyr)
 library(ggplot2)
 data("movielens")
 
