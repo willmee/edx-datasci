@@ -1,0 +1,67 @@
+---
+title: "EdX Data Science Capstone Project"
+author: "William Mee"
+date: '2022-06-27'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# EdX Data Science: Capstone Project
+
+This is the machine learning capstone project for EdX Data Science online course.
+
+I elected to implement a recommendation system based on the 
+[Movielens 10 million dataset](https://grouplens.org/datasets/movielens/10m/). 
+
+## Baseline: mean of all ratings
+I followed the coursework initially to establish a baseline RMSE by taking a 
+simple mean of all the ratings: this value is 1.061202. 
+
+```{r}
+rmse <- function(true_ratings, predicted_ratings) {
+  sqrt(mean((true_ratings - predicted_ratings)^2))
+}
+
+mu_hat <- mean(edx$rating)
+pred_0 <- rep(mu_hat, nrow(validation))
+rmse(validation$rating, pred_0)
+```
+
+## Bias models (user, movies and genres)
+I proceeded to calculate the bias successively of movies, users and genres. Code
+snippets are below. Using this approach, I obtained the following RMSE values:
+
+| Model | RMSE | 
+|-------:|:------:|
+| Movie Bias | 0.9439087 | 
+| Movie/User Bias | 123 |
+| 1 | 1 |  
+
+```{r}
+movie_bias <- edx %>%
+  group_by(movieId) %>%
+  summarize(biasMovie = mean(rating)-mu_hat)
+
+pred_1 <- validation %>%
+  left_join(movie_bias, by='movieId') %>%
+  pull(biasMovie)
+
+pred_1 <- pred_1 + mu_hat
+
+# Prediction 1: 0.9439087
+rmse(validation$rating, pred_1)
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

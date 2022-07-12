@@ -6,7 +6,6 @@ library(caret)
 load(file="/Users/willmee/dev/rlang/edx-datasci/data/movielens-capstone.Rda")
 load(file="/Users/willmee/dev/rlang/edx-datasci/data/movielens-capstone-validation.Rda")
 
-
 # Genre effect
 
 # dataframe with movieId and one genre per row
