@@ -16,9 +16,14 @@ This is the machine learning capstone project for EdX Data Science online course
 I elected to implement a recommendation system based on the 
 [Movielens 10 million dataset](https://grouplens.org/datasets/movielens/10m/). 
 
+```{r, echo=FALSE}
+load(file="/Users/WillMee/dev/personal/edx-datasci/capstone/data/movielens-capstone.Rda")
+load(file="/Users/WillMee/dev/personal/edx-datasci/capstone/data/movielens-capstone-validation.Rda")
+```
+
 ## Baseline: mean of all ratings
 I followed the coursework initially to establish a baseline RMSE by taking a 
-simple mean of all the ratings: this value is 1.061202. 
+simple mean of all the ratings: this value is *1.061202*. 
 
 ```{r}
 rmse <- function(true_ratings, predicted_ratings) {
@@ -32,14 +37,16 @@ rmse(validation$rating, pred_0)
 
 ## Bias models (user, movies and genres)
 I proceeded to calculate the bias successively of movies, users and genres. Code
-snippets are below. Using this approach, I obtained the following RMSE values:
+snippets are below. Using this approach, I obtained the following RMSE values,
+which got progressively better as I added in more features. 
 
 | Model | RMSE | 
 |-------:|:------:|
-| Movie Bias | 0.9439087 | 
-| Movie/User Bias | 123 |
-| 1 | 1 |  
+| Movie Bias | 0.9439087 |
+| Movie/User Bias | 0.8653488 |
+| Movie/User/Genre Bias | 1 |  
 
+### Movie Bias
 ```{r}
 movie_bias <- edx %>%
   group_by(movieId) %>%
@@ -53,8 +60,33 @@ pred_1 <- pred_1 + mu_hat
 
 # Prediction 1: 0.9439087
 rmse(validation$rating, pred_1)
-
 ```
+
+### Movie/User Bias
+```{r}
+user_bias <- edx %>%
+  left_join(movie_bias, by='movieId') %>%
+  group_by(userId) %>%
+  summarize(biasUser = mean(rating-mu-biasMovie)) 
+
+pred_2 <- validation %>%
+  left_join(movie_bias, by='movieId') %>%
+  left_join(user_bias, by='userId') %>%
+  mutate(prediction = mu + biasMovie + biasUser) %>%
+  pull(prediction)
+
+# Prediction 2: 0.8653488
+rmse(validation$rating, pred_2)
+```
+
+## Using regularization on the Bias Models
+In all cases, using regularization on the bias models improved results. 
+
+| Model | RMSE | RMSE w regularization |
+|-------:|:------:|:------:|
+| Movie Bias | 0.9439087 |  0.9438542 |
+| Movie/User Bias | 0.8653488 | 0 |
+| Movie/User/Genre Bias | 1 | 0 | 
 
 ## Including Plots
 

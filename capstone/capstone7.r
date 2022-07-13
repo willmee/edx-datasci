@@ -3,8 +3,8 @@
 library("recommenderlab")
 library(tidyverse)
 
-load(file="/Users/willmee/dev/rlang/edx-datasci/data/movielens-capstone.Rda")
-load(file="/Users/willmee/dev/rlang/edx-datasci/data/movielens-capstone-validation.Rda")
+load(file="/Users/WillMee/dev/personal/edx-datasci/capstone/data/movielens-capstone.Rda")
+load(file="/Users/WillMee/dev/personal/edx-datasci/capstone/data/movielens-capstone-validation.Rda")
 
 rmse <- function(true_ratings, predicted_ratings) {
   sqrt(mean((true_ratings - predicted_ratings)^2))
@@ -58,7 +58,7 @@ test_rrm <- as(test_matrix, "realRatingMatrix")
 # use RecommenderLab
 rec <- Recommender(train_rrm, method = "UBCF")
 rm(train_rrm)
-pre <- predict(rec, test_rrm, type="ratingMatrix")
+system.time(pre <- predict(rec, test_rrm, type="ratingMatrix"))
 
-# use pivot_longer to convert back into input for RMSE
+# use pivot_longer to convert back into input for RMSE?
 # https://tidyr.tidyverse.org/articles/pivot.html

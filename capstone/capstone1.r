@@ -56,5 +56,5 @@ edx <- rbind(edx, removed)
 rm(dl, ratings, movies, test_index, temp, movielens, removed)
 
 # Save in case R crashes
-save(edx, file="/Users/willmee/dev/rlang/edx-datasci/data/movielens-capstone.Rda")
-save(validation, file="/Users/willmee/dev/rlang/edx-datasci/data/movielens-capstone-validation.Rda")
+save(edx, file="/Users/WillMee/dev/personal/edx-datasci/capstone/data/movielens-capstone.Rda")
+save(validation, file="/Users/WillMee/dev/personal/edx-datasci/capstone/data/movielens-capstone-validation.Rda")
