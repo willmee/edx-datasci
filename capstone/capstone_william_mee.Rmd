@@ -5,10 +5,12 @@ date: '2022-06-27'
 output: html_document
 ---
 
-```{r setup, include=FALSE, echo=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r setup, include=FALSE, echo=FALSE, message=FALSE, comment=NA}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
 
 library(tidyverse)
+library(caret)
+
 load(file="/Users/WillMee/dev/personal/edx-datasci/capstone/data/movielens-capstone.Rda")
 load(file="/Users/WillMee/dev/personal/edx-datasci/capstone/data/movielens-capstone-validation.Rda")
 ```
@@ -87,13 +89,109 @@ rmse(validation$rating, pred_2)
 ```
 
 ## Using regularization on the Bias Models
-In both cases, using regularization on the bias models improved results. The 
-table below repeats the above models for comparison.
+In both cases, using regularization on the bias models improved results. 
 
-| Model # | Description         | RMSE      | RMSE w regularization |
-|:--------|:----------------    |:---------:|:---------------------:|
-| 3       | Movie Bias reg      | 0.9439087 |  0.9438542 |
-| 4       | Movie/User Bias reg | 0.8653488 | 0.8648177 |
+The training data `edx` was partitioned to obtain an optimal lambda parameter.
+
+```{r}
+set.seed(51, sample.kind="Rounding")
+test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
+edx_train <- edx[-test_index,]
+temp <- edx[test_index,]
+
+edx_test <- temp %>% 
+  semi_join(edx_train, by = "movieId") %>%
+  semi_join(edx_train, by = "userId")
+
+removed <- anti_join(temp, edx_test, by=c("movieId", "userId"))
+edx_train <- rbind(edx_train, removed)
+```
+
+```{r echo=FALSE}
+regularized_prediction_movie <- function(lambda, train, test) {
+  reg_mu <- mean(train$rating)
+  movie_bias_regularized <- train %>%
+    group_by(movieId) %>%
+    summarize(biasMovie = sum(rating - reg_mu)/(lambda + n()))
+  
+  pred <- reg_mu + test %>%
+    left_join(movie_bias_regularized, by='movieId') %>%
+    pull(biasMovie)
+  
+  rmse(test$rating, pred)
+}
+
+lambdas <- seq(0, 5, 0.25)
+rmses_regularized_movie <- sapply(lambdas, function(x) {
+  regularized_prediction_movie(x, edx_train, edx_test)
+  }
+)
+
+#plot(lambdas, rmses_regularized_movie)
+
+lambda <- lambdas[which.min(rmses_regularized_movie)]
+
+# Prediction 3: regularization, just movie 
+# 0.9438542
+pred3 <- regularized_prediction_movie(lambda, edx, validation)
+```
+
+The code for movie and user bias is shown below (the code for movie only is
+a simplified version of this)
+
+```{r}
+regularized_prediction_movie_user <- function(lambda, train, test) {
+  reg_mu <- mean(train$rating)
+
+  movie_bias_regularized <- train %>%
+    group_by(movieId) %>%
+    summarize(biasMovie = sum(rating - reg_mu)/(lambda + n()))
+  
+  user_bias_regularized <- train %>%
+    left_join(movie_bias_regularized, by='movieId') %>%
+    group_by(userId) %>%
+    summarize(biasUser = sum(rating - reg_mu - biasMovie)/(lambda + n())) 
+  
+  pred <- test %>%
+    left_join(movie_bias_regularized, by='movieId') %>%
+    left_join(user_bias_regularized, by='userId') %>%
+    mutate(pred = reg_mu + biasUser + biasMovie) %>%
+    pull(pred)
+  
+  rmse(test$rating, pred)
+}
+
+# Prediction 4: regularization with movie and user with arbitrary lambda
+regularized_prediction_movie_user(lambda, edx, validation)
+
+lambdas <- seq(3, 10, 0.1)
+rmses_regularized_movie_user <- sapply(lambdas, function(x) {
+  regularized_prediction_movie_user(x, edx_train, edx_test)
+})
+```
+
+```{r lambda, rmses_regularized_movie, echo=FALSE}
+plot(lambdas, rmses_regularized_movie_user, 
+     type='p',
+     main='Effect of varying lambda on regularized RMSE', 
+     xlab='Lambda parameter', ylab='Regularized RMSE')
+```
+
+```{r}
+lambda <- lambdas[which.min(rmses_regularized_movie_user)]
+lambda
+
+# Prediction 5: regularization with movie and user and optimal lambda
+regularized_prediction_movie_user(lambda, edx, validation)
+```
+
+The table below summarizes these results, and repeats the earlier
+unregulated models for comparison.
+
+| Model # | Description         | RMSE      | Lambda | RMSE w/out regularization |
+|:--------|:----------------    |:---------:|:------:|:---------------:|
+| 3       | Movie Bias reg      | 0.9438542 | 1.75 | 0.9439087  |
+| 4       | Movie/User Bias reg | 0.8648177 | 5.0 | 0.8653488  |
 
 ## Using Genre as a feature
 
@@ -101,13 +199,3 @@ The Movielens data associates zero or more genres with a movie. I used this
 as an additional feature.
 
 | Movie/User/Genre Bias | ? | 0.8647045 | 
-
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
