@@ -46,8 +46,14 @@ rmse(validation$rating, pred_0)
 ```
 
 ## Bias models (users, movies)
-I proceeded to calculate the bias successively of movies and users. Code
-snippets are below. Using this approach, I obtained the following RMSE values,
+I proceeded to calculate the bias successively of movies and users, so using
+the following to caldulate prediction Y for movie i
+$$ Y_{u,i} = \mu + b_i + \epsilon_{u,i} $$
+and for movie i and user u
+$$ Y_{u,i} = \mu + b_i + b_u + \epsilon_{u,i} $$
+where $ \epsilon $ represents the residual.
+
+Code snippets are below. Using this approach, I obtained the following RMSE values,
 which got progressively better. 
 
 | Model # | Description     | RMSE      | 
@@ -195,7 +201,61 @@ unregulated models for comparison.
 
 ## Using Genre as a feature
 
-The Movielens data associates zero or more genres with a movie. I used this
-as an additional feature.
+The Movielens data associates zero or more genres with a movie. I explored use 
+of this as an additional feature. I began by creating a movie/genre dataframe 
+and then calculating a genre bias for heavily-used genres (associated with over
+100000 reviews), using the model
 
-| Movie/User/Genre Bias | ? | 0.8647045 | 
+and for movie i and user u
+$$ Y_{u,i} = \mu + b_i + b_u + \epsilon_{u,i} + \eta \sum_{g=1}^{k} b_g\theta_{g,i} $$
+where $\theta_{g,i}$ is 1 if the movie i is associated with genre g and 0 otherwise.
+
+```{r}
+genres <- edx %>%
+  select(movieId, genres) %>%
+  distinct() %>%
+  separate_rows(genres, sep='\\|') %>%
+  rename(genre = genres)
+
+residuals <- edx %>%
+  left_join(movie_bias, by='movieId') %>%
+  left_join(user_bias, by='userId') %>%
+  mutate(residual = rating - (mu_hat + biasMovie + biasUser)) %>%
+  select(userId, movieId, residual)
+
+genre_bias <- residuals %>%
+  left_join(genres, by = 'movieId') %>%
+  group_by(genre) %>%
+  summarize(
+    biasGenre = mean(residual), 
+    biasGenreSd = sd(residual),
+    biasGenreSe = sd(residual)/sqrt(n()),
+    genreCount = n(),
+    biasGenreReg = sum(residual)/(genreCount + lambda)
+  ) %>%
+  filter(genreCount>=100000)
+```
+
+Plotting the bias of genres with 95% confidence intervals showed that the
+bias based on the genre was not random. 
+
+```{r genre_bias, echo=FALSE}
+# plot means using 95% confidence intervals
+genre_bias %>%
+  filter(genre != '(no genres listed)') %>%
+  arrange(biasGenre) %>%
+  mutate(genre = factor(genre, levels = genre)) %>%
+  ggplot(aes(genre, biasGenre)) +
+  geom_point(stat='identity', color='blue', alpha=0.8, aes(size=sqrt(genreCount))) +
+  geom_errorbar(aes(ymin = biasGenre - (1.96 * biasGenreSe), ymax = biasGenre + (1.96 * biasGenreSe))) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  xlab("Genre") +
+  ylab("Genre bias") +
+  labs(size = "Review count (sqrt)")
+```
+
+My final result is in the table
+
+| Model # | Description     | RMSE      | 
+|:--------|:----------------|:---------:|
+| 5       | Movie/User/Genre Bias | 0.8647045 | 
