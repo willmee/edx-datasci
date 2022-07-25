@@ -22,14 +22,14 @@ This is the machine learning capstone project for EdX Data Science online course
 I elected to implement a recommendation system based on the 
 [Movielens 10 million dataset](https://grouplens.org/datasets/movielens/10m/).
 I began by following the bias models we explored in coursework, took this further
-by also using genre as a feature, and then 
-followed the hint given in coursework to explore the some of the more advanced models of the 
+by also using genre as a feature, attempted to use PCR and then followed the 
+hint given in the book to explore the some of the more advanced models of the 
 [R recommenderlab package](https://www.rdocumentation.org/packages/recommenderlab/versions/1.0.1)
 in particular, looking at use of SVD.
 
 ## Baseline: mean of all ratings
-I began by establishing a simple RMSE function and calculating a baseline RMSE 
-by taking a  simple mean of all the ratings: this value is **1.061202**. 
+I began by establishing a simple root mean square error (RMSE) function and 
+calculating a baseline RMSE by taking a  simple mean of all the ratings: this value is **1.061202**. 
 
 | Model # | Description     | RMSE      | 
 |:--------|:----------------|:---------:|
@@ -45,13 +45,18 @@ pred_0 <- rep(mu_hat, nrow(validation))
 rmse(validation$rating, pred_0)
 ```
 
-## Bias models (users, movies)
+# Bias models
 I proceeded to calculate the bias successively of movies and users, so using
-the following to caldulate prediction Y for movie i
+the following to calculate prediction Y for movie i.
+
 $$ Y_{u,i} = \mu + b_i + \epsilon_{u,i} $$
 and for movie i and user u
 $$ Y_{u,i} = \mu + b_i + b_u + \epsilon_{u,i} $$
-where $ \epsilon $ represents the residual.
+where 
+
+- $b_i$ is the bias for movie i
+- $b_u$ is the bias for user u
+- $\epsilon$ represents the residual i.e. the difference between the predicted and actual rating.
 
 Code snippets are below. Using this approach, I obtained the following RMSE values,
 which got progressively better. 
@@ -61,8 +66,8 @@ which got progressively better.
 | 1       | Movie Bias      | 0.9439087 |
 | 2       | Movie/User Bias | 0.8653488 |
 
-### Movie Bias
-```{r pred_1}
+## Movie Bias
+```{r baseline}
 movie_bias <- edx %>%
   group_by(movieId) %>%
   summarize(biasMovie = mean(rating)-mu_hat)
@@ -77,8 +82,8 @@ pred_1 <- pred_1 + mu_hat
 rmse(validation$rating, pred_1)
 ```
 
-### Movie/User Bias
-```{r}
+## Movie/User Bias
+```{r movie-user-bias}
 user_bias <- edx %>%
   left_join(movie_bias, by='movieId') %>%
   group_by(userId) %>%
@@ -94,12 +99,12 @@ pred_2 <- validation %>%
 rmse(validation$rating, pred_2)
 ```
 
-## Using regularization on the Bias Models
+## Using regularization
 In both cases, using regularization on the bias models improved results. 
 
 The training data `edx` was partitioned to obtain an optimal lambda parameter.
 
-```{r}
+```{r regularization-l}
 set.seed(51, sample.kind="Rounding")
 test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
 edx_train <- edx[-test_index,]
@@ -199,8 +204,7 @@ unregulated models for comparison.
 | 3       | Movie Bias reg      | 0.9438542 | 1.75 | 0.9439087  |
 | 4       | Movie/User Bias reg | 0.8648177 | 5.0 | 0.8653488  |
 
-## Using Genre as a feature
-
+## Genre bias
 The Movielens data associates zero or more genres with a movie. I explored use 
 of this as an additional feature. I began by creating a movie/genre dataframe 
 and then calculating a genre bias for heavily-used genres (associated with over
@@ -208,9 +212,21 @@ and then calculating a genre bias for heavily-used genres (associated with over
 
 and for movie i and user u
 $$ Y_{u,i} = \mu + b_i + b_u + \epsilon_{u,i} + \eta \sum_{g=1}^{k} b_g\theta_{g,i} $$
-where $\theta_{g,i}$ is 1 if the movie i is associated with genre g and 0 otherwise.
+where
 
-```{r}
+- $\eta$ is a multiplier parameter for the genre biases
+- $b_g$ is the genre bias for genre g
+- $\theta_{g,i}$ is a binary multiplier with a value of 1 if the movie i is associated with genre g and 0 otherwise.
+
+Using this model (together with regularization) gave a very slight improvement over the user/movie bias model.
+
+| Model # | Description     | RMSE      | 
+|:--------|:----------------|:---------:|
+| 5       | Movie/User/Genre Bias (with regularization) | 0.8647045 | 
+
+Details are below.
+
+```{r genre-bias-setup}
 genres <- edx %>%
   select(movieId, genres) %>%
   distinct() %>%
@@ -239,7 +255,7 @@ genre_bias <- residuals %>%
 Plotting the bias of genres with 95% confidence intervals showed that the
 bias based on the genre was not random. 
 
-```{r genre_bias, echo=FALSE}
+```{r genre-bias-plot, echo=FALSE}
 # plot means using 95% confidence intervals
 genre_bias %>%
   filter(genre != '(no genres listed)') %>%
@@ -254,8 +270,68 @@ genre_bias %>%
   labs(size = "Review count (sqrt)")
 ```
 
-My final result is in the table
+# Matrix-based approaches
+In the second part of my project, I looked beyond the simple bias models to
+more sophisticated models, such as PCR. For much of this, I converted the test
+and training datasets to matrices, and used the R  [recommnederlab](https://www.rdocumentation.org/packages/recommenderlab/versions/1.0.1) package
 
-| Model # | Description     | RMSE      | 
+## Conversion of data to Matrices
+I converted the test and training data to matrix form using the Tidyverse *pivot_wider* function. I added
+in missing columns (movies) to the test data to ensure both had the same column
+dimension, giving
+
+| Matrix | Dimension (rowsxcolumns)     | Sparcity      | 
 |:--------|:----------------|:---------:|
-| 5       | Movie/User/Genre Bias | 0.8647045 | 
+| Train       | 69878 x 10677 | 0.987937 | 
+| Test       | 68534 x 10677 |  0.9986334 | 
+
+It's worth noticing that the test matrix has almost the same number of rows (users)
+but is considerably more sparse.
+
+```{r matrix-conversion}
+train_matrix <- edx %>% 
+  select(userId, movieId, rating) %>%
+  pivot_wider(names_from = "movieId", values_from = "rating") %>%
+  as.matrix()
+
+# add row names
+rownames(train_matrix) <- train_matrix[,1]
+train_matrix <- train_matrix[,-1]
+# 69878 x 10677 users x movies 
+dim(train_matrix)
+
+
+test_matrix <- validation %>% 
+  select(userId, movieId, rating) %>%
+  pivot_wider(names_from = "movieId", values_from = "rating") %>%
+  as.matrix()
+
+rownames(test_matrix) <- test_matrix[,1]
+test_matrix <- test_matrix[,-1]
+dim(test_matrix)
+# 68534 x 9809 users x movies
+
+movie_id_delta <- setdiff(unique(edx$movieId), unique(validation$movieId))
+
+test_matrix_ext <- matrix(data=NA, nrow=dim(test_matrix)[1], ncol=length(movie_id_delta))
+colnames(test_matrix_ext) <- movie_id_delta
+rownames(test_matrix_ext) <- rownames(test_matrix)
+test_matrix <- cbind(test_matrix, test_matrix_ext)
+# ensure column order is the same in both matrices
+test_matrix <- test_matrix[,colnames(train_matrix)]
+
+# 68534 x 10677
+dim(test_matrix)
+```
+
+## Use of naive PCA
+Use of the R *prcromp* function to calculate PCA of the training matrix was so
+slow that I could not get it to complete. I abandoned this approach.
+```{r pcromp-abandoned}
+pca <- prcomp(train_matrix)
+```
+
+## Recommenderlab Setup
+To use Recommenderlab, my original machine (Macos/2.3 GHz quad core Intel i7, 16GB ram) repeatedly ran 
+out of memory giving a `vector memory exhausted` message, despite me configuring additional virtual
+memory via `R_MAX_VSIZE`
