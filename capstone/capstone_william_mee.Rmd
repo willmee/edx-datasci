@@ -104,7 +104,7 @@ In both cases, using regularization on the bias models improved results.
 
 The training data `edx` was partitioned to obtain an optimal lambda parameter.
 
-```{r regularization-l}
+```{r regularization-1}
 set.seed(51, sample.kind="Rounding")
 test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
 edx_train <- edx[-test_index,]
@@ -118,7 +118,7 @@ removed <- anti_join(temp, edx_test, by=c("movieId", "userId"))
 edx_train <- rbind(edx_train, removed)
 ```
 
-```{r echo=FALSE}
+```{r regularization-2, echo=FALSE}
 regularized_prediction_movie <- function(lambda, train, test) {
   reg_mu <- mean(train$rating)
   movie_bias_regularized <- train %>%
@@ -147,10 +147,10 @@ lambda <- lambdas[which.min(rmses_regularized_movie)]
 pred3 <- regularized_prediction_movie(lambda, edx, validation)
 ```
 
-The code for movie and user bias is shown below (the code for movie only is
-a simplified version of this)
+The code for movie and user bias is shown below (the movie-only version is
+a simplified subset of this)
 
-```{r}
+```{r regularization-movie-user}
 regularized_prediction_movie_user <- function(lambda, train, test) {
   reg_mu <- mean(train$rating)
 
@@ -188,7 +188,7 @@ plot(lambdas, rmses_regularized_movie_user,
      xlab='Lambda parameter', ylab='Regularized RMSE')
 ```
 
-```{r}
+```{r regularization-final}
 lambda <- lambdas[which.min(rmses_regularized_movie_user)]
 lambda
 
@@ -271,7 +271,7 @@ genre_bias %>%
 ```
 
 # Matrix-based approaches
-In the second part of my project, I looked beyond the simple bias models to
+In the second part of the capstone, I looked beyond the simple bias models to
 more sophisticated models, such as PCR. For much of this, I converted the test
 and training datasets to matrices, and used the R  [recommnederlab](https://www.rdocumentation.org/packages/recommenderlab/versions/1.0.1) package
 
@@ -280,10 +280,10 @@ I converted the test and training data to matrix form using the Tidyverse *pivot
 in missing columns (movies) to the test data to ensure both had the same column
 dimension, giving
 
-| Matrix | Dimension (rowsxcolumns)     | Sparcity      | 
-|:--------|:----------------|:---------:|
-| Train       | 69878 x 10677 | 0.987937 | 
-| Test       | 68534 x 10677 |  0.9986334 | 
+| Matrix | Dimension (rowsxcolumns)     | Sparcity (NA ratio) | 
+|:--------|:---------------------------:|:-------------------:|
+| Train   | 69878 x 10677               | 0.987937            | 
+| Test    | 68534 x 10677               |  0.9986334          | 
 
 It's worth noticing that the test matrix has almost the same number of rows (users)
 but is considerably more sparse.
@@ -324,14 +324,70 @@ test_matrix <- test_matrix[,colnames(train_matrix)]
 dim(test_matrix)
 ```
 
+I used the following simple function to determine matrix sparcity
+
+```{r sparcity}
+matrix_sparcity <- function(matrix) {
+  matrix_dim <- dim(matrix)  
+  sum(is.na(matrix))/(matrix_dim[1] * matrix_dim[2])
+}
+```
+
 ## Use of naive PCA
 Use of the R *prcromp* function to calculate PCA of the training matrix was so
 slow that I could not get it to complete. I abandoned this approach.
-```{r pcromp-abandoned}
+```
 pca <- prcomp(train_matrix)
 ```
 
-## Recommenderlab Setup
-To use Recommenderlab, my original machine (Macos/2.3 GHz quad core Intel i7, 16GB ram) repeatedly ran 
+## Recommenderlab Setup and Workstation
+To use recommenderlab, my original machine (MacOS/2.3 GHz quad core Intel i7, 16GB RAM) repeatedly ran 
 out of memory giving a `vector memory exhausted` message, despite me configuring additional virtual
-memory via `R_MAX_VSIZE`
+memory via `R_MAX_VSIZE`. I switched to a more powerful modern machine (MacOS/Apple M1 Max, 64GB RAM)
+and was able to proceed.
+
+## Recommenderlab Algorithms
+Recommenderlab supports multiple different algorithms and is deigned to make them easy to compare.
+In the capstone, I looked at 
+
+* *RANDOM* (for a baseline)
+* *UBCF*: User-based collborative filtering 
+* *IBCF*: Item-based collborative filtering (IBCF)
+* *SVD*: Singular value decomposition with column-mean imputation
+* *SVDF*: Funk SVD
+
+## RMSE for matrices with NAs
+
+Recommenderlab has its own evaluation functions, but I extended the basic algorithm
+to work with matrices with NAs.
+
+```{r rmse-matrix}
+rmse_matrix <- function(actual, predicted) {
+  stopifnot(dim(actual) == dim(predicted))
+  actual_cp <- actual
+  predicted_cp <- predicted
+  nas <- is.na(actual)
+  predicted_cp[nas] <- -1
+  residual_na_ratio <- matrix_sparcity(predicted_cp)
+  actual_cp[nas] <- -1
+  residual_nas <- is.na(predicted_cp)
+  predicted_cp[residual_nas] <- -2
+  actual_cp[residual_nas] <- -2
+  list(rmse = sqrt(sum((actual_cp - predicted_cp)^2)/(sum(!(nas | residual_nas)))), na_ratio=residual_na_ratio)
+}
+```
+
+## UBCF
+UBCF looked to be very promising: tests against an initial small batch of users gave a substantially
+smaller RMSE score of 0.6703336, but I had several issues:
+
+1. The predict method was very slow, even on a powerful machine. I could predict on small
+batches of users (I was using a batch size of 1000), but each batch was taking between 30
+and 90 minutes.
+2. The recommendations produced had NA entries for some user/movie entries
+3. Most seriously: the UBCF predict call was triggering errors for some batches (see below)
+There were other reports of this online, but no clear resolution or work-around that I could find.
+
+> Error in h(simpleError(msg, call)) : 
+>  error in evaluating the argument 'x' in selecting a method for function 't': not-yet-implemented method for <dgCMatrix> %*% <list>
+

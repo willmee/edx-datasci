@@ -9,8 +9,9 @@
 library("recommenderlab")
 library(tidyverse)
 
-load(file="/Users/WillMee/dev/personal/edx-datasci/capstone/data/movielens-capstone.Rda")
-load(file="/Users/WillMee/dev/personal/edx-datasci/capstone/data/movielens-capstone-validation.Rda")
+data_dir <- "/Users/WillMee/dev/personal/edx-datasci/capstone/data"
+load(file=paste(data_dir, "movielens-capstone.Rda", sep="/"))
+load(file=paste(data_dir, "movielens-capstone-validation.Rda", sep="/"))
 
 # ratio of NA to entries with values 
 matrix_sparcity <- function(matrix) {
@@ -111,7 +112,8 @@ test_rrm_part_normalized <- normalize(test_rrm_part)
 rec_ubcf <- Recommender(train_rrm, method = "UBCF")
 rec_random <- Recommender(train_rrm, method = "RANDOM")
 rec_svd <- Recommender(train_rrm, method="SVD")
-# slow
+system.time(rec_svdf <- Recommender(train_rrm, method="SVDF"))
+# slow - 12-36 hours?
 rec_ibcf <- Recommender(train_rrm, method="IBCF")
 rec_popular <- Recommender(train_rrm, method="POPULAR")
 rec_ar <- Recommender(train_rrm, method="AR")
@@ -124,17 +126,67 @@ system.time(pre_random_part <- predict(rec_random, test_rrm_part, type="ratingMa
 # 1980.621   25.609 1850.962 
 # i.e. about 30 minutes for 1000 rows.
 system.time(pre_ubcf_part <- predict(rec_ubcf, test_rrm_part, type="ratingMatrix"))
-# SVD timing
+# SVD part timing
 # user  system elapsed 
 # 0.487   0.105   0.592
 system.time(pre_svd_part <- predict(rec_svd, test_rrm_part, type="ratingMatrix"))
 
-
+# SVD on complete set
+# user  system elapsed 
+# 59.829  45.374 143.881 
 system.time(pre_svd <- predict(rec_svd, test_rrm, type="ratingMatrix"))
 
+#user  system elapsed 
+#0.144   0.082   0.226 
+system.time(pre_ibcf_part <- predict(rec_ibcf, test_rrm_part, type="ratingMatrix"))
+#user  system elapsed 
+#15.141  17.438  42.188 
+system.time(pre_ibcf <- predict(rec_ibcf, test_rrm, type="ratingMatrix"))
+
+pre_ibcf_part_m <- as(pre_ibcf_part, "matrix")
+pre_ibcf_part_m[1:10,1:20]
 
 # 0.6703336/0.0007229559
 rmse_matrix(test_matrix[1:1000,],as(pre_ubcf_part, "matrix"))
 # 0.8318634/0
 rmse_matrix(test_matrix[1:1000,],as(pre_svd_part, "matrix"))
+# Entire SVD result:
+# 0.8356373/0
+rmse_matrix(test_matrix,as(pre_svd, "matrix"))
 
+# 2/0.001268989
+rmse_matrix(test_matrix[1:1000,],as(pre_ibcf_part, "matrix"))
+# 0.9867809/0.001362822
+rmse_matrix(test_matrix,as(pre_ibcf, "matrix"))
+
+# Calculate full UBCF iteratively
+#save(pre_ubcf_part, file = "/Users/WillMee/dev/personal/edx-datasci/capstone/data/ubcf-1.Rda")
+
+chunk_size <- 1000
+num_rows <- dim(test_matrix)[1]
+start_rows <- seq(from=4001, to=num_rows, by=chunk_size)
+start_ts <- Sys.time()
+for(start_row in start_rows) { 
+  chunk_start_ts <- Sys.time()
+  end_row <- min(start_row+chunk_size-1, num_rows)
+  print(paste("[", format(Sys.time(), "%x %X"), "] ", start_row, "-", end_row, "/", num_rows, sep=""))
+  test_rrm_part <- as(test_matrix[start_row:end_row,], "realRatingMatrix")
+  system.time(pre_ubcf_part <- predict(rec_ubcf, test_rrm_part, type="ratingMatrix"))
+  chunk_file <- paste(data_dir, "/ubcf-", start_row, ".Rda", sep="")
+  save(pre_ubcf_part, file = chunk_file)
+  print(paste("wrote ", chunk_file, sep=""))
+  print(Sys.time() - chunk_start_ts)
+}
+end_ts <- Sys.time()
+print(paste("total time ", (end_ts - start_ts), sep=""))
+
+pre_ubcf_matrix <- matrix(, nrow=0, ncol=dim(test_matrix)[2], byrow=TRUE)
+# merge saved UBCF data
+for(start_row in start_rows) { 
+  chunk_file <- paste(data_dir, "/ubcf-", start_row, ".Rda", sep="")
+  load(file = chunk_file)
+  print(paste("read ", chunk_file))
+  pre_ubcf_matrix <- rbind(pre_ubcf_matrix, as(pre_ubcf_part, "matrix"))
+  print(dim(pre_ubcf_matrix))
+}
+rmse_matrix(test_matrix[1:num_rows,], pre_ubcf_matrix)
