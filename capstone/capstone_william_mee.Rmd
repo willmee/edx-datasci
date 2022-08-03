@@ -280,10 +280,10 @@ I converted the test and training data to matrix form using the Tidyverse *pivot
 in missing columns (movies) to the test data to ensure both had the same column
 dimension, giving
 
-| Matrix | Dimension (rowsxcolumns)     | Sparcity (NA ratio) | 
-|:--------|:---------------------------:|:-------------------:|
-| Train   | 69878 x 10677               | 0.987937            | 
-| Test    | 68534 x 10677               |  0.9986334          | 
+| Matrix | Dimension (rowsxcolumns i.e. usersxmovies)     | Sparcity (NA ratio) | 
+|:--------|:---------------------------------------------:|:-------------------:|
+| Train   | 69878 x 10677                                 | 0.987937            | 
+| Test    | 68534 x 10677                                 | 0.9986334           | 
 
 It's worth noticing that the test matrix has almost the same number of rows (users)
 but is considerably more sparse.
@@ -324,7 +324,8 @@ test_matrix <- test_matrix[,colnames(train_matrix)]
 dim(test_matrix)
 ```
 
-I used the following simple function to determine matrix sparcity
+I used the following simple function to determine matrix __sparcity__ (ratio of
+NA entries)
 
 ```{r sparcity}
 matrix_sparcity <- function(matrix) {
@@ -340,26 +341,50 @@ slow that I could not get it to complete. I abandoned this approach.
 pca <- prcomp(train_matrix)
 ```
 
-## Recommenderlab Setup and Workstation
+## Recommenderlab
+Reccomenderlab is an R package for evaluating recommendation systems which implements several
+different algorithms. It uses sparse matrix representation. 
+
+### Setup and Workstation
 To use recommenderlab, my original machine (MacOS/2.3 GHz quad core Intel i7, 16GB RAM) repeatedly ran 
 out of memory giving a `vector memory exhausted` message, despite me configuring additional virtual
 memory via `R_MAX_VSIZE`. I switched to a more powerful modern machine (MacOS/Apple M1 Max, 64GB RAM)
 and was able to proceed.
 
-## Recommenderlab Algorithms
-Recommenderlab supports multiple different algorithms and is deigned to make them easy to compare.
+### Recommenderlab Algorithms
+Recommenderlab supports multiple different algorithms and is designed to make them easy to compare.
+There is a good overview of the algorithms 
+[here](https://cran.r-project.org/web/packages/recommenderlab/vignettes/recommenderlab.pdf).
 In the capstone, I looked at 
 
-* *RANDOM* (for a baseline)
+* *RANDOM*: used for a baseline
 * *UBCF*: User-based collborative filtering 
 * *IBCF*: Item-based collborative filtering (IBCF)
 * *SVD*: Singular value decomposition with column-mean imputation
 * *SVDF*: Funk SVD
 
-## RMSE for matrices with NAs
+### Recommenders and RMSE for matrices with NAs
+
+I setup recommenderlab recommenders based on the test and training matrices
+
+```
+train_rrm <- as(train_matrix, "realRatingMatrix")
+test_rrm <- as(test_matrix, "realRatingMatrix")
+
+rec_ubcf <- Recommender(train_rrm, method = "UBCF")
+rec_random <- Recommender(train_rrm, method = "RANDOM")
+rec_svd <- Recommender(train_rrm, method="SVD")
+rec_svdf <- Recommender(train_rrm, method="SVDF")
+rec_ibcf <- Recommender(train_rrm, method="IBCF")
+```
+
+The execution time of the recommender creation varied a lot between the algorithms; 
+most were complete in a matter of minutes, but the *IBCF* recommender took over 24 hours to create. 
 
 Recommenderlab has its own evaluation functions, but I extended the basic algorithm
-to work with matrices with NAs.
+to work with matrices with NAs. Some of the algrorithms (notable UBCF) also didn't provide 
+predictions for all the test data (i.e. there were NAs in the prediction matrix
+which were not in the test matrix) so I also output the ratio of these failures.
 
 ```{r rmse-matrix}
 rmse_matrix <- function(actual, predicted) {
@@ -377,17 +402,39 @@ rmse_matrix <- function(actual, predicted) {
 }
 ```
 
-## UBCF
+### SVD and Funk SVD
+The *SVD* algorithm is an implementation of 
+[singular value decomposition](https://en.wikipedia.org/wiki/Singular_value_decomposition).
+I was easily able to evaluate the SVD recommender; prediction took about 3 minutes
+on the hardware described above.
+
+```
+system.time(pre_svd <- predict(rec_svd, test_rrm, type="ratingMatrix"))
+rmse_matrix(test_matrix, as(pre_svd, "matrix"))
+```
+This gave me the following result, substantially better than the bias models
+above. The NA ratio (i.e. ratio of NAs in the prediction which weren't in test) was 0.
+
+| Model # | Description     | RMSE      | Prediction NA ratio |
+|:--------|:----------------|:---------:|:---------|
+| 6       | SVD             | 0.8356373 | 0        |
+
+
+I couldn't create the *SVDF* recommender: R consistently reported a logical 
+error.  
+
+### UBCF
 UBCF looked to be very promising: tests against an initial small batch of users gave a substantially
 smaller RMSE score of 0.6703336, but I had several issues:
 
 1. The predict method was very slow, even on a powerful machine. I could predict on small
 batches of users (I was using a batch size of 1000), but each batch was taking between 30
 and 90 minutes.
-2. The recommendations produced had NA entries for some user/movie entries
+2. The recommendations produced NA entries for some user/movie entries which were in the test matrix
 3. Most seriously: the UBCF predict call was triggering errors for some batches (see below)
 There were other reports of this online, but no clear resolution or work-around that I could find.
 
 > Error in h(simpleError(msg, call)) : 
->  error in evaluating the argument 'x' in selecting a method for function 't': not-yet-implemented method for <dgCMatrix> %*% <list>
+>   error in evaluating the argument 'x' in selecting a method for function 't': not-yet-implemented method for <dgCMatrix> %*% <list>
 
+Because of this third point, I couldn't evaluate the entire test set using UBCF.

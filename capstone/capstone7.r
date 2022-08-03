@@ -70,7 +70,6 @@ train_matrix <- train_matrix[,-1]
 # 69878 x 10677 users x movies 
 dim(train_matrix)
 
-
 test_matrix <- validation %>% 
   select(userId, movieId, rating) %>%
   pivot_wider(names_from = "movieId", values_from = "rating") %>%
