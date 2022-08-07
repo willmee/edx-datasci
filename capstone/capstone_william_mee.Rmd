@@ -10,6 +10,7 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
 
 library(tidyverse)
 library(caret)
+library(ggplot2)
 
 load(file="/Users/WillMee/dev/personal/edx-datasci/capstone/data/movielens-capstone.Rda")
 load(file="/Users/WillMee/dev/personal/edx-datasci/capstone/data/movielens-capstone-validation.Rda")
@@ -22,10 +23,10 @@ This is the machine learning capstone project for EdX Data Science online course
 I elected to implement a recommendation system based on the 
 [Movielens 10 million dataset](https://grouplens.org/datasets/movielens/10m/).
 I began by following the bias models we explored in coursework, took this further
-by also using genre as a feature, attempted to use PCR and then followed the 
-hint given in the book to explore the some of the more advanced models of the 
-[R recommenderlab package](https://www.rdocumentation.org/packages/recommenderlab/versions/1.0.1)
-in particular, looking at use of SVD.
+by also using genre as a feature, attempted to use PCR and then switched to investigate some of the more advanced models of the 
+[R recommenderlab package](https://www.rdocumentation.org/packages/recommenderlab/versions/1.0.1).
+
+The best result I obtained for the entire dataset used singular value decomposition.
 
 ## Baseline: mean of all ratings
 I began by establishing a simple root mean square error (RMSE) function and 
@@ -54,6 +55,7 @@ and for movie i and user u
 $$ Y_{u,i} = \mu + b_i + b_u + \epsilon_{u,i} $$
 where 
 
+- $\mu$ is the mean of all ratings
 - $b_i$ is the bias for movie i
 - $b_u$ is the bias for user u
 - $\epsilon$ represents the residual i.e. the difference between the predicted and actual rating.
@@ -105,16 +107,16 @@ In both cases, using regularization on the bias models improved results.
 The training data `edx` was partitioned to obtain an optimal lambda parameter.
 
 ```{r regularization-1}
-set.seed(51, sample.kind="Rounding")
+set.seed(51, sample.kind='Rounding')
 test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
 edx_train <- edx[-test_index,]
 temp <- edx[test_index,]
 
 edx_test <- temp %>% 
-  semi_join(edx_train, by = "movieId") %>%
-  semi_join(edx_train, by = "userId")
+  semi_join(edx_train, by = 'movieId') %>%
+  semi_join(edx_train, by = 'userId')
 
-removed <- anti_join(temp, edx_test, by=c("movieId", "userId"))
+removed <- anti_join(temp, edx_test, by=c('movieId', 'userId'))
 edx_train <- rbind(edx_train, removed)
 ```
 
@@ -138,13 +140,11 @@ rmses_regularized_movie <- sapply(lambdas, function(x) {
   }
 )
 
-#plot(lambdas, rmses_regularized_movie)
-
 lambda <- lambdas[which.min(rmses_regularized_movie)]
 
 # Prediction 3: regularization, just movie 
 # 0.9438542
-pred3 <- regularized_prediction_movie(lambda, edx, validation)
+regularized_prediction_movie(lambda, edx, validation)
 ```
 
 The code for movie and user bias is shown below (the movie-only version is
@@ -172,27 +172,29 @@ regularized_prediction_movie_user <- function(lambda, train, test) {
   rmse(test$rating, pred)
 }
 
-# Prediction 4: regularization with movie and user with arbitrary lambda
-regularized_prediction_movie_user(lambda, edx, validation)
-
 lambdas <- seq(3, 10, 0.1)
 rmses_regularized_movie_user <- sapply(lambdas, function(x) {
   regularized_prediction_movie_user(x, edx_train, edx_test)
 })
 ```
 
-```{r lambda, rmses_regularized_movie, echo=FALSE}
-plot(lambdas, rmses_regularized_movie_user, 
-     type='p',
-     main='Effect of varying lambda on regularized RMSE', 
-     xlab='Lambda parameter', ylab='Regularized RMSE')
+I selected the lambda parameter programmatically, by iterating through values and taking the one with the minimum RMSE.
+
+```{r lambdas-ggplot, echo=FALSE}
+lambdas_df <- data.frame(lambda=lambdas, rmse=rmses_regularized_movie_user)
+ggplot(data=lambdas_df, aes(x=lambda, y=rmse)) +
+  geom_line(color='blue') +
+  geom_point(color='blue') +
+  ggtitle('Effect of varying lambda on regularized RMSE for User/Group Model') +
+  xlab('Lambda parameter') +
+  ylab('Regularized RMSE')
 ```
 
 ```{r regularization-final}
 lambda <- lambdas[which.min(rmses_regularized_movie_user)]
 lambda
 
-# Prediction 5: regularization with movie and user and optimal lambda
+# Prediction 4: regularization with movie and user and optimal lambda
 regularized_prediction_movie_user(lambda, edx, validation)
 ```
 
@@ -210,8 +212,7 @@ of this as an additional feature. I began by creating a movie/genre dataframe
 and then calculating a genre bias for heavily-used genres (associated with over
 100000 reviews), using the model
 
-and for movie i and user u
-$$ Y_{u,i} = \mu + b_i + b_u + \epsilon_{u,i} + \eta \sum_{g=1}^{k} b_g\theta_{g,i} $$
+$$ Y_{u,i} = \mu + b_i + b_u + \eta \sum_{g=1}^{k} b_g\theta_{g,i} + \epsilon_{u,i}$$
 where
 
 - $\eta$ is a multiplier parameter for the genre biases
@@ -224,7 +225,7 @@ Using this model (together with regularization) gave a very slight improvement o
 |:--------|:----------------|:---------:|
 | 5       | Movie/User/Genre Bias (with regularization) | 0.8647045 | 
 
-Details are below.
+Implementation of this approach in R was done as follows:
 
 ```{r genre-bias-setup}
 genres <- edx %>%
@@ -252,8 +253,8 @@ genre_bias <- residuals %>%
   filter(genreCount>=100000)
 ```
 
-Plotting the bias of genres with 95% confidence intervals showed that the
-bias based on the genre was not random. 
+Using the approach we took in course-work, I confirmed that the
+bias based on the genre was not random by plotting with 95% confidence intervals showed . 
 
 ```{r genre-bias-plot, echo=FALSE}
 # plot means using 95% confidence intervals
@@ -271,8 +272,8 @@ genre_bias %>%
 ```
 
 # Matrix-based approaches
-In the second part of the capstone, I looked beyond the simple bias models to
-more sophisticated models, such as PCR. For much of this, I converted the test
+In the second part of the project, I looked beyond the simple bias models to
+more sophisticated approaches, such as PCR. For this, I converted the test
 and training datasets to matrices, and used the R  [recommnederlab](https://www.rdocumentation.org/packages/recommenderlab/versions/1.0.1) package
 
 ## Conversion of data to Matrices
@@ -280,7 +281,7 @@ I converted the test and training data to matrix form using the Tidyverse *pivot
 in missing columns (movies) to the test data to ensure both had the same column
 dimension, giving
 
-| Matrix | Dimension (rowsxcolumns i.e. usersxmovies)     | Sparcity (NA ratio) | 
+| Matrix | Dimension (rows x columns i.e. users x movies)     | Sparsity (NA ratio) | 
 |:--------|:---------------------------------------------:|:-------------------:|
 | Train   | 69878 x 10677                                 | 0.987937            | 
 | Test    | 68534 x 10677                                 | 0.9986334           | 
@@ -291,7 +292,7 @@ but is considerably more sparse.
 ```{r matrix-conversion}
 train_matrix <- edx %>% 
   select(userId, movieId, rating) %>%
-  pivot_wider(names_from = "movieId", values_from = "rating") %>%
+  pivot_wider(names_from = 'movieId', values_from = 'rating') %>%
   as.matrix()
 
 # add row names
@@ -303,13 +304,13 @@ dim(train_matrix)
 
 test_matrix <- validation %>% 
   select(userId, movieId, rating) %>%
-  pivot_wider(names_from = "movieId", values_from = "rating") %>%
+  pivot_wider(names_from = 'movieId', values_from = 'rating') %>%
   as.matrix()
 
 rownames(test_matrix) <- test_matrix[,1]
 test_matrix <- test_matrix[,-1]
-dim(test_matrix)
 # 68534 x 9809 users x movies
+dim(test_matrix)
 
 movie_id_delta <- setdiff(unique(edx$movieId), unique(validation$movieId))
 
@@ -324,7 +325,7 @@ test_matrix <- test_matrix[,colnames(train_matrix)]
 dim(test_matrix)
 ```
 
-I used the following simple function to determine matrix __sparcity__ (ratio of
+I used the following simple function to determine matrix __sparsity__ (ratio of
 NA entries)
 
 ```{r sparcity}
@@ -342,8 +343,9 @@ pca <- prcomp(train_matrix)
 ```
 
 ## Recommenderlab
-Reccomenderlab is an R package for evaluating recommendation systems which implements several
-different algorithms. It uses sparse matrix representation. 
+Recomenderlab is an R package for evaluating recommendation systems which implements several
+different algorithms. It uses sparse matrix representation and implements a set of different
+recommendation algorithms for easy comparison.
 
 ### Setup and Workstation
 To use recommenderlab, my original machine (MacOS/2.3 GHz quad core Intel i7, 16GB RAM) repeatedly ran 
@@ -358,8 +360,8 @@ There is a good overview of the algorithms
 In the capstone, I looked at 
 
 * *RANDOM*: used for a baseline
-* *UBCF*: User-based collborative filtering 
-* *IBCF*: Item-based collborative filtering (IBCF)
+* *UBCF*: User-based collaborative filtering 
+* *IBCF*: Item-based collaborative filtering (IBCF)
 * *SVD*: Singular value decomposition with column-mean imputation
 * *SVDF*: Funk SVD
 
@@ -368,14 +370,14 @@ In the capstone, I looked at
 I setup recommenderlab recommenders based on the test and training matrices
 
 ```
-train_rrm <- as(train_matrix, "realRatingMatrix")
-test_rrm <- as(test_matrix, "realRatingMatrix")
+train_rrm <- as(train_matrix, 'realRatingMatrix')
+test_rrm <- as(test_matrix, 'realRatingMatrix')
 
-rec_ubcf <- Recommender(train_rrm, method = "UBCF")
-rec_random <- Recommender(train_rrm, method = "RANDOM")
-rec_svd <- Recommender(train_rrm, method="SVD")
-rec_svdf <- Recommender(train_rrm, method="SVDF")
-rec_ibcf <- Recommender(train_rrm, method="IBCF")
+rec_ubcf <- Recommender(train_rrm, method = 'UBCF')
+rec_random <- Recommender(train_rrm, method = 'RANDOM')
+rec_svd <- Recommender(train_rrm, method = 'SVD')
+rec_svdf <- Recommender(train_rrm, method = 'SVDF')
+rec_ibcf <- Recommender(train_rrm, method = 'IBCF')
 ```
 
 The execution time of the recommender creation varied a lot between the algorithms; 
@@ -423,18 +425,37 @@ above. The NA ratio (i.e. ratio of NAs in the prediction which weren't in test) 
 I couldn't create the *SVDF* recommender: R consistently reported a logical 
 error.  
 
-### UBCF
-UBCF looked to be very promising: tests against an initial small batch of users gave a substantially
-smaller RMSE score of 0.6703336, but I had several issues:
+### User-based collaborative filtering (UBCF)
+User-based collaborative filtering (UBCF) aggregates the movie ratings of users who rate
+movies similarly to a test user; it finds a __neighborhood__ of similar users. The
+recommenderlab UBCF model looked to be very promising: tests against an initial small batch of users gave a substantially
+smaller RMSE score of **0.6703336**, but I had several issues:
 
 1. The predict method was very slow, even on a powerful machine. I could predict on small
 batches of users (I was using a batch size of 1000), but each batch was taking between 30
 and 90 minutes.
-2. The recommendations produced NA entries for some user/movie entries which were in the test matrix
+2. The recommendations produced NA entries for some user/movie entries which were in the test matrix; this is
+presumably because none of the users in the similar user neighborhood had reviewed these movies. 
 3. Most seriously: the UBCF predict call was triggering errors for some batches (see below)
 There were other reports of this online, but no clear resolution or work-around that I could find.
 
+```
 > Error in h(simpleError(msg, call)) : 
->   error in evaluating the argument 'x' in selecting a method for function 't': not-yet-implemented method for <dgCMatrix> %*% <list>
+   error in evaluating the argument 'x' in selecting a method for function 't': not-yet-implemented method for <dgCMatrix> %*% <list>
+```
 
 Because of this third point, I couldn't evaluate the entire test set using UBCF.
+
+### Item-based collaborative filtering (IBCF)
+Item-based collaborative filtering (IBCF) establishes a similarity between items (in this case: movies)
+and makes predictions based on the user's other ratings, assuming that a user will
+have similar opinions about similar movies. 
+
+The IBCF recommender took a long time to create because it's creating a movie-to-movie
+similarity matrix for all 10677 movies; the evaluation of the test data was however very fast.
+However the results I got using IBCF were worse than the bias models.
+
+| Model # | Description     | RMSE      | Prediction NA ratio |
+|:--------|:----------------|:---------:|:---------|
+| 7       | Item-based collaborative filtering             | 0.9867809 | 0.001362822        |
+

@@ -8,6 +8,7 @@
 library(tidyverse)
 library(caret)
 library(data.table)
+library(ggplot2)
 
 # root mean square error
 rmse <- function(true_ratings, predicted_ratings) {
@@ -126,6 +127,15 @@ rmses_regularized_movie_user <- sapply(lambdas, function(x) {
 }
 )
 plot(lambdas, rmses_regularized_movie_user)
+
+lambdas_df <- data.frame(lambda=lambdas, rmse=rmses_regularized_movie_user)
+ggplot(data=lambdas_df, aes(x=lambda, y=rmse)) +
+  geom_line(color='blue') +
+  geom_point(color='blue') +
+  ggtitle('Effect of varying lambda on regularized RMSE for User/Group Model') +
+  xlab('Lambda parameter') +
+  ylab('Regularized RMSE')
+
 lambda <- lambdas[which.min(rmses_regularized_movie_user)]
 # optimal lambda is 5.0
 

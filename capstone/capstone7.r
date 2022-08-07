@@ -104,11 +104,14 @@ train_rrm <- as(train_matrix, "realRatingMatrix")
 test_rrm <- as(test_matrix, "realRatingMatrix")
 #test_rrm_part <- as(test_matrix[1:100,], "realRatingMatrix")
 test_rrm_part <- as(test_matrix[1:1000,], "realRatingMatrix")
+test_rrm_part_3000 <- as(test_matrix[3001:4000,], "realRatingMatrix")
 test_rrm_part_normalized <- normalize(test_rrm_part)
 
 
 # use RecommenderLab
+recommenderRegistry$get_entry('UBCF', dataType = 'realRatingMatrix')
 rec_ubcf <- Recommender(train_rrm, method = "UBCF")
+rec_ubcf_pearson <- Recommender(train_rrm, method = 'UBCF', list(method = 'pearson'))
 rec_random <- Recommender(train_rrm, method = "RANDOM")
 rec_svd <- Recommender(train_rrm, method="SVD")
 system.time(rec_svdf <- Recommender(train_rrm, method="SVDF"))
@@ -125,6 +128,8 @@ system.time(pre_random_part <- predict(rec_random, test_rrm_part, type="ratingMa
 # 1980.621   25.609 1850.962 
 # i.e. about 30 minutes for 1000 rows.
 system.time(pre_ubcf_part <- predict(rec_ubcf, test_rrm_part, type="ratingMatrix"))
+system.time(pre_ubcf_pearson_part_3001 <- predict(rec_ubcf_pearson, test_rrm_part_3000, type="ratingMatrix"))
+
 # SVD part timing
 # user  system elapsed 
 # 0.487   0.105   0.592
@@ -189,3 +194,8 @@ for(start_row in start_rows) {
   print(dim(pre_ubcf_matrix))
 }
 rmse_matrix(test_matrix[1:num_rows,], pre_ubcf_matrix)
+
+
+# Plotting and Visualization
+svd_scheme <- evaluationScheme(train_rrm, method='split', train = 0.9, k=1, given=3)
+plot(x, y, avg = TRUE, add=FALSE, type= "b", annotate = FALSE, ...)
