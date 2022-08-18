@@ -1,8 +1,10 @@
 ---
 title: "EdX Data Science Capstone Project"
 author: "William Mee"
-date: '2022-08-17'
-output: html_document
+date: "2022-08-17"
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE, echo=FALSE, message=FALSE, comment=NA}
@@ -494,7 +496,7 @@ ggplot(model_results, aes(x = models, y = rmse)) +
   geom_point(size = 5, pch = 21, bg = 4, col = 1) +
   ylim(0.6, 1.1) +
   xlab('Model') +
-  ylab('RMSE')
+  ylab('RMSE') +
   coord_flip() +
   theme_minimal()
 ```
