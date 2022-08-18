@@ -31,16 +31,16 @@ eval_sets <- evaluationScheme(data = ratings_small_norm,
                               method = "cross-validation",
                               k = 10,
                               given = 5,
-                              goodRating = 0)
+                              goodRating = 4)
 
 models_to_evaluate <- list(
   `SVD` = list(name = "RANDOM", param=NULL),
-  `IBCF Cosine` = list(name = "IBCF", 
-                        param = list(method = "cosine")),
+#  `IBCF Cosine` = list(name = "IBCF", 
+#                        param = list(method = "cosine")),
   `IBCF Pearson` = list(name = "IBCF", 
                         param = list(method = "pearson")),
-  `UBCF Cosine` = list(name = "UBCF",
-                        param = list(method = "cosine")),
+#  `UBCF Cosine` = list(name = "UBCF",
+#                        param = list(method = "cosine")),
   `UBCF Pearson` = list(name = "UBCF",
                         param = list(method = "pearson")),
   `Random` = list(name = "RANDOM", param=NULL)

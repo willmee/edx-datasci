@@ -133,6 +133,7 @@ rmses_regularized_movie_user_genre_prediction <- sapply(genre_multipliers, funct
   regularized_prediction_movie_user_genre(x)
 })
 plot(genre_multipliers, rmses_regularized_movie_user_genre_prediction)
+
 genre_multipliers[which.min(rmses_regularized_movie_user_prediction)]
 # 2.2 is the minimum genre multiplier.
 
