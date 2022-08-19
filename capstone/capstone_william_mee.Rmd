@@ -225,7 +225,7 @@ Using this model (together with regularization) gave a very slight improvement o
 
 | Model # | Description     | RMSE      | 
 |:--------|:----------------|:---------:|
-| 5       | Movie/User/Genre Bias (with regularization) | 0.8647045 | 
+| 5       | Movie/User/Genre Bias reg | 0.8647045 | 
 
 Implementation of this approach in R was done as follows:
 
