@@ -1,6 +1,7 @@
 library(tidyverse)
 library(caret)
 library(ggplot2)
+library(recommenderlab)
 
 # I cached the extracted dataset - these lines should be commented out in
 # final assessment.
