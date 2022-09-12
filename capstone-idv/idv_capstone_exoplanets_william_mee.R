@@ -25,11 +25,39 @@ kepler_train$flux <- as.integer(as.character(kepler_train$flux))
 kepler_train_small <- kepler_train %>%
   filter(category == 2 | star < (38 + 37))
 
+category_colors <- c('2' = 'orange', '1' = 'blue')
 
-kepler_train_small %>%
-  filter(star == 1) %>%
-  filter(luminosity > -1000) %>%
-  ggplot(aes(x=flux, y=luminosity)) +
-  geom_point() +
-  scale_x_continuous(breaks=seq(0,3197,1000))
-  
+# visualize one or more timelines
+luminosity_timeline <- function(star_range, ncol=4) {
+  kepler_train_small %>%
+    filter(star %in% star_range) %>%
+    ggplot(aes(x=flux, y=luminosity, color=category)) +
+    #ggplot(aes(x=flux, y=luminosity)) +
+    geom_point(alpha=0.5) +
+    scale_color_manual(values = category_colors) +
+    geom_smooth(formula = y ~ x, method = loess, method.args = list(span = 0.05, degree = 1), 
+                color='red') +
+    scale_x_continuous(breaks=seq(0,3197,1000)) +
+    facet_wrap(vars(star), ncol=ncol, scales='free_y', labeller='label_both')
+}
+
+# Stars with exoplanets
+luminosity_timeline(seq(1, 5), 1)
+
+# Stars without exoplanets
+luminosity_timeline(seq(38, 49))
+
+# visualize one or more luminosity distribution
+luminosity_density <- function(star_range, ncol=4) {
+  kepler_train_small %>%
+    filter(star %in% star_range) %>%
+    ggplot(aes(x=luminosity, fill=category, color=category)) +
+    geom_density(alpha=0.4) +
+    #geom_vline(aes(xintercept=grp.mean, color=category),
+    #           linetype="dashed") +    
+    scale_fill_manual(values = category_colors) +
+    scale_color_manual(values = category_colors) +
+    facet_wrap(vars(star), ncol=ncol, scales='free_y', labeller='label_both')
+}
+
+luminosity_density(c(c(1, 2), c(38, 39)), 2)

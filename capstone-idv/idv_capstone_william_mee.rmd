@@ -22,6 +22,20 @@ The ability to clearly communicate the process and insights gained from an analy
 
 Your project submission will be graded both by your peers and by a staff member. The peer grading will give you an opportunity to check out the projects done by other learners. You are encouraged to give your peers thoughtful, specific feedback on their projects (i.e., more than just "good job" or "not enough detail").
 
+# Data
+
+Category 1: no exoplanet
+Category 2: exoplanet
+
+# Data Exploration and Visualization
+
+## Variations with Time
+
+There are examples of category 1 (no exoplanet) stars with cyclic luminosity:
+43 or 47
+
+Examples of category 2 (exoplanet) which have clear cycles:
+
 ## Example
 
 This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
