@@ -36,6 +36,20 @@ There are examples of category 1 (no exoplanet) stars with cyclic luminosity:
 
 Examples of category 2 (exoplanet) which have clear cycles:
 
+## Seasons, Cycles & Stationarity
+
+Is the Exoplanet data staionary? 
+
+Formal tests for stationarity called “unit root tests” are available in the fUnitRoots package
+
+Expectation is that there are seasonal changes (at fixed frequency), not cycles (changes at unknown frequency)
+
+
+- There are multiple statistical tests for seasonality. For instance, auto.arima() in the forecast package for R uses an OCSB test
+
+- Bayesian Online Change Point Detection (BOCPD) is a method to detect sudden changes in a time series that persist over time. Some properties of BOCPD are:
+
+
 ## Example
 
 This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
@@ -47,6 +61,14 @@ summary(cars)
 ```
 
 ## References
+
+### Time Series Analysis
+
+- [Using R for Time Series Analysis](https://a-little-book-of-r-for-time-series.readthedocs.io/en/latest/src/timeseries.html) provides a good overview of seasonal and trend components.
+- [A Little Book of R For Time Series](https://buildmedia.readthedocs.org/media/pdf/a-little-book-of-r-for-time-series/latest/a-little-book-of-r-for-time-series.pdf)
+- [CRAN Task View: Time Series Analysis](https://cran.r-project.org/web/views/TimeSeries.html)
+- [Seasonality Analysis and Forecast in Time Series](https://medium.com/swlh/seasonality-analysis-and-forecast-in-time-series-b8fbba820327)
+
 
 ### Data repositories
 

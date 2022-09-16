@@ -42,10 +42,34 @@ luminosity_timeline <- function(star_range, ncol=4) {
 }
 
 # Stars with exoplanets
-luminosity_timeline(seq(1, 5), 1)
+luminosity_timeline(c(seq(1, 2), seq(38, 39)), 2)
 
 # Stars without exoplanets
 luminosity_timeline(seq(38, 49))
+
+# scale all luminosities to be a ratio of the max
+
+kepler_train <- kepler_train %>%
+  group_by(star) %>%
+  mutate(luminosity_ratio=(luminosity - min(luminosity))/(max(luminosity)-min(luminosity))) %>%
+  ungroup()
+
+# TODO: just filter
+kepler_train_small <- kepler_train_small %>%
+  group_by(star) %>%
+  mutate(luminosity_ratio=(luminosity - min(luminosity))/(max(luminosity)-min(luminosity))) %>%
+  ungroup()
+
+
+# Calculate aggregate data for each star
+luminosity_agg_small = kepler_train_small %>%
+  group_by(star, category) %>% 
+  summarise(mean=mean(luminosity), sd=sd(luminosity), 
+            mean_ratio=mean(luminosity_ratio), sd_ratio=sd(luminosity_ratio))
+luminosity_agg = kepler_train %>%
+  group_by(star, category) %>% 
+  summarise(mean=mean(luminosity), sd=sd(luminosity), 
+            mean_ratio=mean(luminosity_ratio), sd_ratio=sd(luminosity_ratio))
 
 # visualize one or more luminosity distribution
 luminosity_density <- function(star_range, ncol=4) {
@@ -53,11 +77,36 @@ luminosity_density <- function(star_range, ncol=4) {
     filter(star %in% star_range) %>%
     ggplot(aes(x=luminosity, fill=category, color=category)) +
     geom_density(alpha=0.4) +
-    #geom_vline(aes(xintercept=grp.mean, color=category),
-    #           linetype="dashed") +    
     scale_fill_manual(values = category_colors) +
     scale_color_manual(values = category_colors) +
-    facet_wrap(vars(star), ncol=ncol, scales='free_y', labeller='label_both')
+    facet_wrap(vars(star), ncol=ncol, scales='free', labeller='label_both') +
+    geom_vline(data=luminosity_agg_small  %>% filter(star %in% star_range),
+               aes(xintercept=mean, color=category),
+               linetype="dotted") +
+    geom_vline(data=luminosity_agg_small  %>% filter(star %in% star_range),
+             aes(xintercept=mean + sd, color=category),
+             linetype="dashed") +
+    geom_vline(data=luminosity_agg_small  %>% filter(star %in% star_range),
+             aes(xintercept=mean - sd, color=category),
+             linetype="dashed") +
+    theme(legend.position = "none")
 }
 
-luminosity_density(c(c(1, 2), c(38, 39)), 2)
+luminosity_density(c(seq(1, 10), seq(38, 47)), 4)
+
+# Are there differences in the standard deviations?
+luminosity_agg %>% 
+  ggplot(aes(x=category, y=sd_ratio, color=category)) +
+  geom_point(alpha=0.7, size=3) +
+  scale_color_manual(values = category_colors) +
+  theme(legend.position = 'none') +
+  ggtitle('std deviation by category') +
+  ylab('scaled std deviation')
+
+# Analysing seasonality
+# Start with decomposition and visualization
+luminosity_ts <- ts(kepler_train_small %>%
+  filter(star == 1) %>%
+  select(luminosity) %>%
+  pull(), start=1, end=3197, frequency=3197)
+luminosity_decomp <- decompose(luminosity_ts, 'additive')
