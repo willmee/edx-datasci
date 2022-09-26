@@ -27,6 +27,10 @@ Your project submission will be graded both by your peers and by a staff member.
 Category 1: no exoplanet
 Category 2: exoplanet
 
+The dataset has little information; the stars are not identifies, and the flux metric is
+not defined. Neither is the time frame of the observsations: from [discussion](https://www.kaggle.com/datasets/keplersmachines/kepler-labelled-time-series-data/discussion/31106) it seems like it's from data spanning 80 earth days. The dataset author
+says that the [observations are at regular times](https://www.kaggle.com/datasets/keplersmachines/kepler-labelled-time-series-data/discussion/31075). 
+
 # Data Exploration and Visualization
 
 ## Variations with Time
@@ -68,6 +72,7 @@ summary(cars)
 - [A Little Book of R For Time Series](https://buildmedia.readthedocs.org/media/pdf/a-little-book-of-r-for-time-series/latest/a-little-book-of-r-for-time-series.pdf)
 - [CRAN Task View: Time Series Analysis](https://cran.r-project.org/web/views/TimeSeries.html)
 - [Seasonality Analysis and Forecast in Time Series](https://medium.com/swlh/seasonality-analysis-and-forecast-in-time-series-b8fbba820327)
+- [Kaggle Timeseries Course: Seasonality](https://www.kaggle.com/code/ryanholbrook/seasonality)
 
 
 ### Data repositories
@@ -79,5 +84,6 @@ summary(cars)
 ## Datasets
 
 - [Abalone Age](https://archive.ics.uci.edu/ml/datasets/abalone) and at [Kaggle](https://www.kaggle.com/datasets/rodolfomendes/abalone-dataset)
+- [Kepler Exoplanets](https://www.kaggle.com/datasets/keplersmachines/kepler-labelled-time-series-data)
 - [Star types](https://www.kaggle.com/datasets/deepu1109/star-dataset)
 - [Pancreatic Cancer](https://www.kaggle.com/datasets/johnjdavisiv/urinary-biomarkers-for-pancreatic-cancer) See also [Visualization talk](https://www.kaggle.com/code/johnjdavisiv/indiana-mlrc-data-visualization-in-r)
