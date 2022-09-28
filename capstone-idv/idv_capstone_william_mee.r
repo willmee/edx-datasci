@@ -30,6 +30,10 @@ color_palette <- 'Set2'
 # 4176 entries
 dim(abalone_df)
 
+# rings range from 1 to 29
+max(abalone_df$Rings)
+min(abalone_df$Rings)
+
 # comparable numbers of female, male and infantile observations
 by_sex_summary <- abalone_df %>%
   group_by(Sex) %>%
@@ -95,9 +99,21 @@ abalone_rmse <- function(y_hat) {
   sqrt(sum((round(y_hat, digits=0) - abalone_test$Rings)^2)/length(y_hat))
 }
 
+abalone_rmse_no_round <- function(y_hat) {
+  sqrt(sum((y_hat - abalone_test$Rings)^2)/length(y_hat))
+}
+
+
 # Train a first model using the caret package
 train_glm <- train(Rings ~ ., method = 'glm', data = abalone_train)
 y_hat_glm <- predict(train_glm, abalone_test, type = 'raw')
 
 # 2.147319
 abalone_rmse(y_hat_glm)
+
+# look at the confusion matrix which is broken down per ring
+cf_glm <- confusionMatrix(
+  data = factor(round(y_hat_glm), seq(1, 29)), 
+  reference = factor(abalone_test$Rings, seq(1, 29))
+)
+
