@@ -1,7 +1,7 @@
 ---
 title: 'EdX Data Science/HarvardX PH125.9x: IDV Capstone'
 author: "William Mee"
-date: "2022-09-04"
+date: "2022-10-02"
 output: html_document
 ---
 
@@ -9,6 +9,251 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# Introduction
+
+This is the final capstone of the *EdX Data Science/HarvardX PH125.9x* course. The
+aim of the capstone is to apply machine learning techniques from the course to a novel
+dataset.
+
+### Dataset
+
+For my capstone I chose to use the [abalone age](https://archive.ics.uci.edu/ml/datasets/abalone) dataset. This is an older, established dataset but was new to me and not used in
+course material. I chose this dataset because it promised to be a good one to better
+understand the challenges of machine learning, even if the subject was itself not 
+particularly interesting.
+
+The dataset has 4176 observations on abalone (large marine snails)
+which was gathered in the 1990's. It has 7 continuous features (weights, diameter etc.),
+the abalone gender (male, female or immature/infant) and abalone ring counts, which 
+correspond to the snail's age in years. 
+
+| Feature       | Description                               | Type       | Metric 
+| :------------ | :---------------------------------------- | :--------- | :-----
+| Rings         | Growth rings, indicating the age in years | Integer    | Years
+| Sex           | Male, Female or Infant                    | Factor     | M/F/I
+| Length        | Longest shell measurement                 | Continuous | Meters
+| Diameter      | Dimension perpendicular to length         | Continuous | Meters
+| Height        | Total height, including meat              | Continuous | Meters
+| WholeWeight   | Whole abalone weight, including meat      | Continuous | Kilograms  
+| ShuckedWeight | Weight of meat only                       | Continuous | Kilograms  
+| VisceraWeight | Gut weight (after bleeding)               | Continuous | Kilograms 
+| ShellWeight   | Shell weight after being dried            | Continuous | Kilograms 
+
+
+Although this dataset is well-known, I did not look at other work in doing this
+capstone, either scientific papers which quote it or online analysis (Medium, Kaggle etc.)
+
+Note: I spent some time looking at an alternative, the [Kepler Exoplanets dataset](https://www.kaggle.com/datasets/keplersmachines/kepler-labelled-time-series-data). While
+a more interesting subject, this rapidly lead to analysis which wasn't covered in the
+course (time series, fourier transforms etc.) so I decided to not pursue this. Some
+other datasets I evaluated are in the references below. 
+
+### Goal and Approach
+The challenge is to predict the ring count (age) of the abalone using machine learning
+approaches: i.e. to determine if abalone age can be predicted using the other features.
+
+Because the prediction target is integer/numeric, this is a regression (vs classification)
+task. I began by transforming the data into an R dataset with necessary transformations,
+then analyzed and visualized the data, including looking at feature correlation. The dataset required little
+cleaning or pre-processing, but I did remove a couple of outliers. I used a standard 
+root mean square error (RMSE) function to evaluate the success of predictions, although also
+include accuracy and other 'confusion metrics' data occasionally for comparison, treating
+the ring count as categories. 
+
+The [caret R framework](https://topepo.github.io/caret/)
+provided a convenient approach to explore a variety of different machine learning 
+algorithms for the problem: I investigated GLM, KNN and random forest for this work. Further details
+and results are given below. 
+
+Beyond comparing different algorithms, I explored feature selection (whether using fewer features 
+improved the predictions) as well as whether the combination of gender-specific models
+would improve overall results. 
+
+# Analysis
+
+```{r initialization, echo=FALSE, warning=FALSE, message=FALSE}
+library(caret)
+library(ggplot2)
+library(tidyverse)
+library(RColorBrewer)
+```
+
+### Data preparation
+
+I downloaded, lightly transformed and saved a local copy of the abalone data with
+the following
+
+```{r download-dataset, eval=FALSE, comment=NA, warning=FALSE, message=FALSE}
+# Download the Abalone dataset
+abalone_tmp <- tempfile()
+download.file('https://archive.ics.uci.edu/ml/machine-learning-databases/abalone/abalone.data', abalone_tmp)
+# Convert to a dataframe and rename columns
+abalone_df <- read.csv(file = abalone_tmp)
+colnames(abalone_df) <- c(
+  'Sex', 'Length', 'Diameter', 'Height', 'WholeWeight', 
+  'ShuckedWeight', 'VisceraWeight', 'ShellWeight', 'Rings'
+  )
+# Convert the Sex column to a factor
+abalone_df$Sex <- as.factor(abalone_df$Sex)
+# Save a local copy 
+save(abalone_df, file='./edx-datasci/capstone-idv/data/abalone.Rda')
+```
+
+```{r load-dataset, echo=FALSE, warning=FALSE, message=FALSE}
+load('./data/abalone.Rda')
+```
+
+### Data cleaning
+
+The dataset contains no missing features. During visualization and exploration, I caught
+only a couple of samples which seemed to be erroneous (height > 50 cm)
+
+```{r clean-dataset, warning=FALSE, message=FALSE}
+abalone_df <- abalone_df %>% filter(Height <= 0.5)
+```
+
+### Data exploration and visualization
+
+I used *summarize* to obtain the following overviews by sex 
+
+| Sex    | Count | Mean Rings | SD Rings | Min Rings | Max Rings | 
+| :----- | :---- | :-------- | :-------- | :--------- | :-------
+| Infant |  1342 |  7.89      | 2.51     | 1          | 21
+| Female |  1306 | 11.1       | 3.10     | 5          | 29
+| Male   |  1526 | 10.7       | 3.03     | 3          | 27
+
+The ring count histograms are as follows:
+
+```{r ring-histograms-by-sex, echo=FALSE, warning=FALSE, message=FALSE}
+by_sex_summary <- abalone_df %>%
+  group_by(Sex) %>%
+  summarize(
+    Count=n(), 
+    RingsMean=mean(Rings), 
+    RingsSd=sd(Rings),
+    ShellWeightMean=mean(ShellWeight), 
+  )
+
+color_palette <- 'Set2'
+
+abalone_df %>%
+  ggplot(aes(x=Rings, color=Sex)) +
+  geom_histogram(binwidth=1, aes(fill=Sex), alpha=0.5) +
+  geom_vline(data=by_sex_summary, aes(xintercept=RingsMean),
+             linetype='dashed',  color='Red') +
+  labs(title='Abalone Ring Histograms by Sex with Means', x='Rings', y = 'Count') +
+  scale_colour_brewer(palette = color_palette) +
+  scale_fill_brewer(palette = color_palette) +
+  facet_grid(Sex ~ .)
+```
+
+I extracted summary data including correlations of the numeric features with the ring count, which are summarized below.
+
+| Feature       | Min | Max | Rings Correlation 
+| :------------ | :-- | :-- | :----------------
+| Rings         | 1   | 29  | 1
+| Length        |  | | 0.557
+| Diameter      | | | 0.575
+| Height        | | | 0.61 
+| WholeWeight   | 0.002 | 2.8255 | 0.541
+| ShuckedWeight | | | 0.422
+| VisceraWeight | | | 0.505 
+| ShellWeight   | | | 0.628 
+
+Histograms of the features broken down by sex are also intersting: below is
+that of *ShellWeight*
+
+```{r shell-weight-histograms-by-sex, echo=FALSE, warning=FALSE, message=FALSE}
+abalone_df %>%
+  ggplot(aes(x=ShellWeight, color=Sex)) +
+  geom_histogram(aes(fill=Sex), alpha=0.5) +
+  geom_vline(data=by_sex_summary, aes(xintercept=ShellWeightMean),
+             linetype='dashed',  color='Red') +
+  labs(title='Abalone ShellWeight Histograms by Sex with Means', x='ShellWeight', y = 'Count') +
+  scale_colour_brewer(palette = color_palette) +
+  scale_fill_brewer(palette = color_palette) +
+  facet_grid(Sex ~ .)
+```
+
+I then looked at scatter plots of some of the features against the ring count; 
+for example here is *Height* vs *Rings*.
+
+```{r ring-vs-height-scatterplot, echo=FALSE, warning=FALSE, message=FALSE}
+abalone_df %>%
+  ggplot(aes(x=Rings, y=Height, color=Sex)) +
+  geom_point(aes(fill=Sex), alpha=0.8) +
+  scale_colour_brewer(palette = color_palette) +
+  labs(title='Abalone Ring Count vs Height', x='Rings', y = 'Height (m)') 
+
+```
+
+### Insights
+
+There are several relevant insights based on the above analysis and visualizations:
+
+* the majority of observations have rings in the middle range
+independent of Sex (i.e. even for infant abalone): the prevalence of very young or very old abalone is small. 
+* the classification of *Infant* is unclear from the data: there are older abalone
+which are classified as infant and very young ones which are not.
+* features such as *ShellWeight* have a normal distribution for the adult 
+populations, but not for the infant one:
+* All the numeric features are positively correlated to Rings, with *Height* and *ShellWeight*
+having the greatest correlation. 
+* From the scatter plot of *Rings* vs *Height* it seems there is strong correlation
+for the infant population. This is confirmed by breaking down the correlation 
+by *Sex* which gives a correlation of **0.720** for infant abalone vs **0.450** for
+male and **0.342** for female. The obvious intuition here is that the infant
+abalone are in a stronger growth phase.
+
+Several of the above insights indicated that using sub-models based on the *Sex*
+feature might improve predictions.
+
+### Modeling and Loss Function
+
+I split the dataset into 90% train and 10% test partitions:
+
+```{r split-train-test}
+set.seed(51, sample.kind = 'Rounding')
+test_index <- createDataPartition(abalone_df$Rings, times = 1, p = 0.1, list = FALSE)
+abalone_test <- abalone_df[test_index, ]
+abalone_train <- abalone_df[-test_index, ]  
+```
+
+I then looked at the results of 3 regression models: *GLM*, *kNearestNeighbors* and *Random Forest*,
+including parameter selection.
+
+I used the standard RMSE (root mean square error) as a loss function. The regression
+models all produced fractional ring predictions, so strictly the results should be
+rounded, but I explored both and the difference was small. I decided to use the
+non-rounded RMSE function because the age represented by the rings is continuous.
+
+Converting the rings to categories and then looking at the confusion matrix was also
+informative.
+
+# Results
+
+a results section that presents the modeling results and discusses the model performance; and
+
+# Conclusion
+a conclusion section that gives a brief summary of the report, its potential impact, its limitations, and future work.
+
+# References
+
+### Dataset repositories
+
+- [UCI Machine Learning Repository](https://archive-beta.ics.uci.edu/)
+- [Datasets/Kaggle](https://www.kaggle.com/datasets)
+- [ML-Friendly Public Datasets/Kaggle](https://www.kaggle.com/code/annavictoria/ml-friendly-public-datasets/notebook)
+
+### Datasets
+
+- [Abalone Age](https://archive.ics.uci.edu/ml/datasets/abalone) and at [Kaggle](https://www.kaggle.com/datasets/rodolfomendes/abalone-dataset)
+- [Kepler Exoplanets](https://www.kaggle.com/datasets/keplersmachines/kepler-labelled-time-series-data)
+- [Star types](https://www.kaggle.com/datasets/deepu1109/star-dataset)
+- [Pancreatic Cancer](https://www.kaggle.com/datasets/johnjdavisiv/urinary-biomarkers-for-pancreatic-cancer) See also [Visualization talk](https://www.kaggle.com/code/johnjdavisiv/indiana-mlrc-data-visualization-in-r)
+
+
+# Delete in Final Version
 ## Instructions
 
 For this project, you will be applying machine learning techniques that go beyond standard linear regression. You will have the opportunity to use a publicly available dataset to solve the problem of your choice. You are strongly discouraged from using well-known datasets, particularly ones that have been used as examples in previous courses or are similar to them (such as the iris, titanic, mnist, or movielens datasets, among others) - this is your opportunity to branch out and explore some new data! The UCI Machine Learning Repository and Kaggle are good places to seek out a dataset. Kaggle also maintains a curated list of datasets that are cleaned and ready for machine learning analyses. Your dataset must be automatically downloaded in your code or included with your submission. You may not submit the same project for both the MovieLens and Choose Your Own project submissions, and your Choose Your Own project submission may not simply be a variation of your MovieLens project.
@@ -22,68 +267,3 @@ The ability to clearly communicate the process and insights gained from an analy
 
 Your project submission will be graded both by your peers and by a staff member. The peer grading will give you an opportunity to check out the projects done by other learners. You are encouraged to give your peers thoughtful, specific feedback on their projects (i.e., more than just "good job" or "not enough detail").
 
-# Data
-
-Category 1: no exoplanet
-Category 2: exoplanet
-
-The dataset has little information; the stars are not identifies, and the flux metric is
-not defined. Neither is the time frame of the observsations: from [discussion](https://www.kaggle.com/datasets/keplersmachines/kepler-labelled-time-series-data/discussion/31106) it seems like it's from data spanning 80 earth days. The dataset author
-says that the [observations are at regular times](https://www.kaggle.com/datasets/keplersmachines/kepler-labelled-time-series-data/discussion/31075). 
-
-# Data Exploration and Visualization
-
-## Variations with Time
-
-There are examples of category 1 (no exoplanet) stars with cyclic luminosity:
-43 or 47
-
-Examples of category 2 (exoplanet) which have clear cycles:
-
-## Seasons, Cycles & Stationarity
-
-Is the Exoplanet data staionary? 
-
-Formal tests for stationarity called “unit root tests” are available in the fUnitRoots package
-
-Expectation is that there are seasonal changes (at fixed frequency), not cycles (changes at unknown frequency)
-
-
-- There are multiple statistical tests for seasonality. For instance, auto.arima() in the forecast package for R uses an OCSB test
-
-- Bayesian Online Change Point Detection (BOCPD) is a method to detect sudden changes in a time series that persist over time. Some properties of BOCPD are:
-
-
-## Example
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
-```
-
-## References
-
-### Time Series Analysis
-
-- [Using R for Time Series Analysis](https://a-little-book-of-r-for-time-series.readthedocs.io/en/latest/src/timeseries.html) provides a good overview of seasonal and trend components.
-- [A Little Book of R For Time Series](https://buildmedia.readthedocs.org/media/pdf/a-little-book-of-r-for-time-series/latest/a-little-book-of-r-for-time-series.pdf)
-- [CRAN Task View: Time Series Analysis](https://cran.r-project.org/web/views/TimeSeries.html)
-- [Seasonality Analysis and Forecast in Time Series](https://medium.com/swlh/seasonality-analysis-and-forecast-in-time-series-b8fbba820327)
-- [Kaggle Timeseries Course: Seasonality](https://www.kaggle.com/code/ryanholbrook/seasonality)
-
-
-### Data repositories
-
-- [UCI Machine Learning Repository](https://archive-beta.ics.uci.edu/)
-- [Datasets/Kaggle](https://www.kaggle.com/datasets)
-- [ML-Friendly Public Datasets/Kaggle](https://www.kaggle.com/code/annavictoria/ml-friendly-public-datasets/notebook)
-
-## Datasets
-
-- [Abalone Age](https://archive.ics.uci.edu/ml/datasets/abalone) and at [Kaggle](https://www.kaggle.com/datasets/rodolfomendes/abalone-dataset)
-- [Kepler Exoplanets](https://www.kaggle.com/datasets/keplersmachines/kepler-labelled-time-series-data)
-- [Star types](https://www.kaggle.com/datasets/deepu1109/star-dataset)
-- [Pancreatic Cancer](https://www.kaggle.com/datasets/johnjdavisiv/urinary-biomarkers-for-pancreatic-cancer) See also [Visualization talk](https://www.kaggle.com/code/johnjdavisiv/indiana-mlrc-data-visualization-in-r)
