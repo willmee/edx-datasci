@@ -25,7 +25,6 @@ load('./edx-datasci/capstone-idv/data/abalone.Rda')
 abalone_df <- abalone_df %>% filter(Height <= 0.5)
 
 
-
 # Data exploration
 # 4174 entries
 dim(abalone_df)
@@ -43,10 +42,16 @@ by_sex_summary <- abalone_df %>%
   )
 
 # rings range from 1 to 29
-abalone_df %>%
+summary <- abalone_df %>%
   summarize(
     minRings = min(Rings), maxRings = max(Rings),
+    minLength = min(Length), maxLength = max(Length),
+    minDiameter = min(Diameter), maxDiameter = max(Diameter),
+    minHeight = min(Height), maxHeight = max(Height),
     minWholeWeight = min(WholeWeight), maxWholeWeight = max(WholeWeight),
+    minShuckedWeight = min(ShuckedWeight), maxShuckedWeight = max(ShuckedWeight),
+    minVisceraWeight = min(VisceraWeight), maxVisceraWeight = max(VisceraWeight),
+    minShellWeight = min(ShellWeight), maxShellWeight = max(ShellWeight),
   )
 
 # Correlations
@@ -116,8 +121,6 @@ abalone_df %>%
   scale_fill_brewer(palette = color_palette) +
   facet_grid(Sex ~ .)
 
-
-
 # Boxplots to look at outliers
 abalone_df %>%
   ggplot(aes(x=Rings, y=WholeWeight, group=Rings)) + 
@@ -134,7 +137,6 @@ abalone_df %>%
   ggplot(aes(x=Rings, y=Diameter, group=Rings)) + 
   geom_boxplot(outlier.colour="red")
 
-
 # Remove outliers and split into train and test sets
 set.seed(51, sample.kind = 'Rounding')
 test_index <- createDataPartition(abalone_df$Rings, times = 1, p = 0.1, list = FALSE)
@@ -144,32 +146,82 @@ abalone_test <- abalone_df[test_index, ]
 abalone_train <- abalone_df[-test_index, ]  
 
 # error functions
-abalone_rmse <- function(y_hat) {
-  sqrt(sum((round(y_hat, digits=0) - abalone_test$Rings)^2)/length(y_hat))
+abalone_rmse_round <- function(y_hat, y) {
+  sqrt(sum((round(y_hat, digits=0) - y)^2)/length(y_hat))
 }
 
-abalone_rmse_no_round <- function(y_hat, y) {
-  sqrt(sum((y_hat - abalone_test$Rings)^2)/length(y_hat))
+rmse <- function(y_hat, y) {
+  sqrt(sum((y_hat - y)^2)/length(y_hat))
+}
+accuracy <- function(y_hat, y) {
+  mean(round(y_hat) == y)
 }
 
 # Train a first model using the caret package
 train_glm <- train(Rings ~ ., method = 'glm', data = abalone_train)
-y_hat_glm <- predict(train_glm, abalone_test, type = 'raw')
+rings_pred_glm <- predict(train_glm, abalone_test, type = 'raw')
 
-# 2.147319
-abalone_rmse(y_hat_glm)
+# 2.160
+rmse(rings_pred_glm, abalone_test$Rings)
 
-# accuracy: 0.221957
-mean(round(y_hat_glm) == abalone_test$Rings)
+# accuraccy: 0.237
+mean(round(rings_pred_glm) == abalone_test$Rings)
 
-# look at the confusion matrix which is broken down per ring
+# look at the confusion matrix, treating this as a classification problem
+all_rings <- seq(summary$minRings, summary$maxRings)
 cm_glm <- confusionMatrix(
-  data = factor(round(y_hat_glm), seq(1, 29)), 
-  reference = factor(abalone_test$Rings, seq(1, 29))
+  data = factor(round(rings_pred_glm), all_rings), 
+  reference = factor(abalone_test$Rings, all_rings)
 )
 
 cm_glm$overall
 cm_glm$byClass[,c("Sensitivity","Specificity", "Prevalence")]
+cm_glm$byClass[,c("Prevalence", "F1", "Sensitivity", "Precision", "Recall")]
+
+glm_errors = data.frame(
+  Sex = abalone_test$Sex,
+  Rings = abalone_test$Rings,
+  RingsPredicted = rings_pred_glm,
+  Accurate = round(rings_pred_glm) == abalone_test$Rings,
+  Error = abalone_test$Rings - rings_pred_glm
+)
+
+# look at the error distribution
+glm_errors %>%  
+ggplot(aes(x=Rings, color=Accurate)) +
+  geom_histogram(binwidth=1, aes(fill=Accurate), alpha=0.5) +
+  labs(title='GLM Errors', x='Rings', y = 'Error Count')
+
+glm_errors %>%
+  group_by(Rings) %>%
+  summarize(meanError = mean(Error)) %>%
+  ggplot(aes(x=Rings, y=meanError)) + 
+  geom_line(color='orange') +
+  geom_hline(yintercept=0, linetype='dashed', color = 'blue') +
+  labs(title='Mean prediction error by Ring', x='Rings', y = 'Mean ring error')
+ 
+
+
+# kNN
+train_knn <- train(Rings ~ ., method = 'knn', 
+                   data = abalone_train,
+                   tuneGrid = data.frame(k = seq(3, 71, 2)))
+train_knn$bestTune
+rings_pred_knn <- predict(train_knn, abalone_test, type = 'raw')
+# 2.18501
+rmse(rings_pred_knn, abalone_test$Rings)
+# 0.2392344
+accuracy(rings_pred_knn, abalone_test$Rings)
+
+# Try using fewer features
+train_knn_minimal <- train(Rings ~ ShellWeight + Diameter + Height, method = 'knn', 
+                           data = abalone_train,
+                           tuneGrid = data.frame(k = seq(15, 30, 2)))
+rings_pred_knn_minimal <- predict(train_knn_minimal, abalone_test, type = 'raw')
+# 2.230 - error is significantly worse
+rmse(rings_pred_knn_minimal, abalone_test$Rings)
+
+
 
 # Are the immature abalone easier to classify?
 abalone_train_i <- abalone_train %>% filter(Sex == 'I') %>% select(!Sex)
@@ -179,97 +231,39 @@ abalone_test_m <- abalone_test %>% filter(Sex == 'M') %>% select(!Sex)
 abalone_train_f <- abalone_train %>% filter(Sex == 'F') %>% select(!Sex)
 abalone_test_f <- abalone_test %>% filter(Sex == 'F') %>% select(!Sex)
 
-
-train_glm_i <- train(Rings ~ ., method = 'glm', data = abalone_train_i)
-y_hat_glm_i <- predict(train_glm_i, abalone_test_i, type = 'raw')
-
-# yes: accuracy = 0.3154362 
-mean(round(y_hat_glm_i) == abalone_test_i$Rings)
-
-# Looking at kNN
-train_knn <- train(Rings ~ ., method = 'knn', data = abalone_train)
-y_hat_knn <- predict(train_knn, abalone_test, type = 'raw')
-# 2.190237
-abalone_rmse(y_hat_knn)
-
-cm_knn <- confusionMatrix(
-  data = factor(round(y_hat_knn), seq(1, 29)), 
-  reference = factor(abalone_test$Rings, seq(1, 29))
-)
-# 0.2649165
-cm_knn$overall['Accuracy']
-
-train_knn_i <- train(Rings ~ ., method = 'knn', data = abalone_train_i, tuneGrid = data.frame(k = 27))
+train_knn_i <- train(Rings ~ ., method = 'knn', data = abalone_train_i, tuneGrid = data.frame(k = seq(15, 30, 2)))
 rings_pred_knn_i <- predict(train_knn_i, abalone_test_i, type = 'raw')
- 0.3825503
-mean(round(y_hat_knn_i) == abalone_test_i$Rings)
+# yes: the RMSE is only 1.652
+rmse(rings_pred_knn_i, abalone_test_i$Rings)
 
-train_knn_m <- train(Rings ~ ., method = 'knn', data = abalone_train_m, tuneGrid = data.frame(k = 27))
+train_knn_m <- train(Rings ~ ., method = 'knn', data = abalone_train_m, tuneGrid = data.frame(k = seq(15, 30, 2)))
 rings_pred_knn_m <- predict(train_knn_m, abalone_test_m, type = 'raw')
-# 0.2108844
-mean(round(y_hat_knn_m) == abalone_test_m$Rings)
+# 2.071
+rmse(rings_pred_knn_m, abalone_test_m$Rings)
 
-train_knn_f <- train(Rings ~ ., method = 'knn', data = abalone_train_f, tuneGrid = data.frame(k = 27))
+train_knn_f <- train(Rings ~ ., method = 'knn', data = abalone_train_f, tuneGrid = data.frame(k = seq(15, 30, 2)))
 rings_pred_knn_f <- predict(train_knn_f, abalone_test_f, type = 'raw')
-# only 0.1869919
-mean(round(y_hat_knn_f) == abalone_test_f$Rings)
+# 2.820
+rmse(rings_pred_knn_f, abalone_test_f$Rings)
 
 rings_pred_knn_recombined = c(rings_pred_knn_i, rings_pred_knn_m, rings_pred_knn_f)
 abalone_rings_test_recombined = c(abalone_test_i$Rings, abalone_test_m$Rings, abalone_test_f$Rings)
-sqrt(sum((round(rings_pred_knn_recombined, digits=0) - abalone_rings_test_recombined)^2)/length(rings_pred_knn_recombined))
+# 2.19132
+rmse(rings_pred_knn_recombined, abalone_rings_test_recombined)
 
-# k parameter
-train_knn <- train(Rings ~ ., method = 'knn', 
-                   data = abalone_train,
-                   tuneGrid = data.frame(k = seq(3, 71, 2)))
-ggplot(train_knn, highlight = TRUE)
-train_knn$bestTune
-
-#train_knn <- train(Rings ~ ., method = 'knn', data = abalone_train)
-y_hat_knn <- predict(train_knn, abalone_test, type = 'raw')
-# 2.166682
-# now: 2.175879
-abalone_rmse(y_hat_knn)
-# 0.24821
-# now: 0.2942584
-mean(round(y_hat_knn) == abalone_test$Rings)
-
-
-# Try using fewer features
-train_knn_minimal <- train(Rings ~ ShellWeight + Diameter + Height, method = 'knn', 
-                   data = abalone_train,
-                   tuneGrid = data.frame(k = seq(15, 30, 2)))
-y_hat_knn_minimal <- predict(train_knn_minimal, abalone_test, type = 'raw')
-# 2.23 - error is significantly worse
-abalone_rmse(y_hat_knn_minimal)
-
-# Look at some alternative algorithms
-# QDA
-train_qda <- train(Rings ~ ShellWeight + Diameter + Height, method = 'qda', data = abalone_train)
 
 # Random forest
 library(randomForest)
-fit_rf <- randomForest(Rings ~ ., data = abalone_train) 
-rings_hat_rf <- predict(fit_rf, abalone_test)
+train_rf <- randomForest(Rings ~ ., data = abalone_train) 
+rings_pred_rf <- predict(train_rf, abalone_test)
+# 2.112301
+rmse(rings_pred_rf, abalone_test$Rings)
+accuracy(rings_pred_rf, abalone_test$Rings)
 
-# 2.16
-abalone_rmse(rings_hat_rf)
-# 0.234
-mean(round(rings_hat_rf) == abalone_test$Rings)
-
-# delegating knn
-train_rf_i <- randomForest(Rings ~ ., data = abalone_train_i)
-rings_pred_rf_i <- predict(train_rf_i, abalone_test_i)
-
-train_rf_m <- randomForest(Rings ~ ., data = abalone_train_m)
-rings_pred_rf_m <- predict(train_rf_m, abalone_test_m)
-
-train_rf_f <- randomForest(Rings ~ ., data = abalone_train_f)
-rings_pred_rf_f <- predict(train_rf_f, abalone_test_f)
-
-
-rings_pred_rf_recombined = c(rings_pred_rf_i, rings_pred_rf_m, rings_pred_rf_f)
-abalone_rings_test_recombined = c(abalone_test_i$Rings, abalone_test_m$Rings, abalone_test_f$Rings)
-# 2.205908
-sqrt(sum((round(rings_pred_rf_recombined, digits=0) - abalone_rings_test_recombined)^2)/length(rings_pred_rf_recombined))
-
+data.frame(Rings=abalone_test$Rings, Error=abalone_test$Rings - rings_pred_rf) %>%
+  group_by(Rings) %>%
+  summarize(meanError = mean(Error)) %>%
+  ggplot(aes(x=Rings, y=meanError)) + 
+  geom_line(color='orange') +
+  geom_hline(yintercept=0, linetype='dashed', color = 'blue') +
+  labs(title='Mean prediction error by Ring: Random Forest', x='Rings', y = 'Mean ring error')

@@ -2,7 +2,9 @@
 title: 'EdX Data Science/HarvardX PH125.9x: IDV Capstone'
 author: "William Mee"
 date: "2022-10-02"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -24,8 +26,8 @@ particularly interesting.
 
 The dataset has 4176 observations on abalone (large marine snails)
 which was gathered in the 1990's. It has 7 continuous features (weights, diameter etc.),
-the abalone gender (male, female or immature/infant) and abalone ring counts, which 
-correspond to the snail's age in years. 
+the abalone sex (male, female or immature/infant) and abalone ring counts, which 
+correspond to the age in years. 
 
 | Feature       | Description                               | Type       | Metric 
 | :------------ | :---------------------------------------- | :--------- | :-----
@@ -53,7 +55,7 @@ The challenge is to predict the ring count (age) of the abalone using machine le
 approaches: i.e. to determine if abalone age can be predicted using the other features.
 
 Because the prediction target is integer/numeric, this is a regression (vs classification)
-task. I began by transforming the data into an R dataset with necessary transformations,
+task. I began by transforming the data into an R dataset,
 then analyzed and visualized the data, including looking at feature correlation. The dataset required little
 cleaning or pre-processing, but I did remove a couple of outliers. I used a standard 
 root mean square error (RMSE) function to evaluate the success of predictions, although also
@@ -66,7 +68,7 @@ algorithms for the problem: I investigated GLM, KNN and random forest for this w
 and results are given below. 
 
 Beyond comparing different algorithms, I explored feature selection (whether using fewer features 
-improved the predictions) as well as whether the combination of gender-specific models
+improved the predictions) as well as whether the combination of sub-models
 would improve overall results. 
 
 # Analysis
@@ -152,9 +154,9 @@ I extracted summary data including correlations of the numeric features with the
 | Feature       | Min | Max | Rings Correlation 
 | :------------ | :-- | :-- | :----------------
 | Rings         | 1   | 29  | 1
-| Length        |  | | 0.557
-| Diameter      | | | 0.575
-| Height        | | | 0.61 
+| Length        |0.075  |  0.815 | 0.557
+| Diameter      |0.055  | 0.65 | 0.575
+| Height        | 0 | 0.25 | 0.61 
 | WholeWeight   | 0.002 | 2.8255 | 0.541
 | ShuckedWeight | | | 0.422
 | VisceraWeight | | | 0.505 
@@ -202,7 +204,7 @@ having the greatest correlation.
 * From the scatter plot of *Rings* vs *Height* it seems there is strong correlation
 for the infant population. This is confirmed by breaking down the correlation 
 by *Sex* which gives a correlation of **0.720** for infant abalone vs **0.450** for
-male and **0.342** for female. The obvious intuition here is that the infant
+male and **0.342** for female. An intuition here is that the infant
 abalone are in a stronger growth phase.
 
 Several of the above insights indicated that using sub-models based on the *Sex*
@@ -212,7 +214,7 @@ feature might improve predictions.
 
 I split the dataset into 90% train and 10% test partitions:
 
-```{r split-train-test}
+```{r split-train-test, warning=FALSE, message=FALSE}
 set.seed(51, sample.kind = 'Rounding')
 test_index <- createDataPartition(abalone_df$Rings, times = 1, p = 0.1, list = FALSE)
 abalone_test <- abalone_df[test_index, ]
@@ -227,15 +229,154 @@ models all produced fractional ring predictions, so strictly the results should 
 rounded, but I explored both and the difference was small. I decided to use the
 non-rounded RMSE function because the age represented by the rings is continuous.
 
+```{r rmse}
+rmse <- function(y_hat, y) {
+  sqrt(sum((y_hat - y)^2)/length(y_hat))
+}
+
+```
+
 Converting the rings to categories and then looking at the confusion matrix was also
 informative.
 
 # Results
 
-a results section that presents the modeling results and discusses the model performance; and
+### General Linear Model (GLM)
+
+I used GLM to achieve an initial baseline
+
+```{r glm}
+train_glm <- train(Rings ~ ., method = 'glm', data = abalone_train)
+rings_pred_glm <- predict(train_glm, abalone_test, type = 'raw')
+```
+
+This GLM RMSE was 2.160 with an accuracy of 0.237
+
+I explored turning the ring counts into factors and looking at the classification
+metrics 
+
+```{r glm-confusion-matrix}
+all_rings <- seq(1, 29)
+cm_glm <- confusionMatrix(
+  data = factor(round(rings_pred_glm), all_rings), 
+  reference = factor(abalone_test$Rings, all_rings)
+)
+
+cm_glm$overall
+cm_glm$byClass[,c("Prevalence", "F1", "Sensitivity", "Precision", "Recall")]
+```
+
+This data showed the variance in prevalence, and how the F1 score varied with rings.
+A simple visualization of the prediction errors by ring showed how many of the higher
+rings (above 13) had only errors.
+
+```{r glm-error-histogram, echo=FALSE}
+glm_errors = data.frame(
+  Sex = abalone_test$Sex,
+  Rings = abalone_test$Rings,
+  RingsPredicted = rings_pred_glm,
+  Accurate = round(rings_pred_glm) == abalone_test$Rings,
+  Error = abalone_test$Rings - rings_pred_glm
+)
+
+# look at the error distribution
+glm_errors %>%  
+ggplot(aes(x=Rings, color=Accurate)) +
+  geom_histogram(binwidth=1, aes(fill=Accurate), alpha=0.5) +
+  labs(title='GLM Errors', x='Rings', y = 'Error Count')
+```
+
+Plotting the mean error (difference between predicted and actual ring count)
+shows an interesting trend: the model predicts increasingly lower counts for high ring count abalone i.e. it is not successful for these older observations, probably due to prevalence.
+
+```{r glm-error-line, echo=FALSE}
+glm_errors %>%
+  group_by(Rings) %>%
+  summarize(meanError = mean(Error)) %>%
+  ggplot(aes(x=Rings, y=meanError)) + 
+  geom_line(color='orange') +
+  geom_hline(yintercept=0, linetype='dashed', color = 'blue') +
+  labs(title='Mean prediction error by Ring', x='Rings', y = 'Mean ring error')
+```
+
+### K-Nearest Neighbors
+
+Switching to the KNN algorithm, the optimal k parameter for the entire dataset was **23**
+
+```{r knn}
+train_knn <- train(Rings ~ ., method = 'knn', 
+                   data = abalone_train,
+                   tuneGrid = data.frame(k = seq(3, 71, 2)))
+rings_pred_knn <- predict(train_knn, abalone_test, type = 'raw')
+```
+
+This gave an RMSE of 2.185 and an accuracy of 0.239, i.e. little difference
+to the GLM model. Using KNN, I explored using less features, selecting
+the three most correlated features *ShellWeight*, *Diameter* and *Height* but the
+RMSE degraded to 2.250.
+
+I then used KNN to explore the idea of Sex-specific models. Training a new model
+on just the infant abalone gave a significantly lower RMSE of 1.651803
+```{r knn-infant-only}
+abalone_train_i <- abalone_train %>% filter(Sex == 'I') %>% select(!Sex)
+abalone_test_i <- abalone_test %>% filter(Sex == 'I') %>% select(!Sex)
+train_knn_i <- train(Rings ~ ., method = 'knn', data = abalone_train_i, tuneGrid = data.frame(k = seq(15, 30, 2)))
+rings_pred_knn_i <- predict(train_knn_i, abalone_test_i, type = 'raw')
+```
+The equivalent male and female RMSEs were 2.071 and 2.820 respectively, i.e. the
+female RMSE increased significantly. The overall RMSE on the simple combination of these three models
+was however 2.191, worse than the orginal. 
+
+### Random Forest
+
+As a final algorithm, I trained a random forest algorithm
+
+```{r random-forest, warning=FALSE, message=FALSE}
+library(randomForest)
+train_rf <- randomForest(Rings ~ ., data = abalone_train) 
+rings_pred_rf <- predict(train_rf, abalone_test)
+```
+
+The achieved RMSE here - 2.112 - was slightly better than the GLM one. The 
+mean prediction errors by ring count showed a similar pattern to GLM. The model
+had low errors for rings up to about 13, but for higher ring counts became 
+increasingly inaccurate, again predicting fewer rings.
+
+```{r random-forest-errors-plot, echo=FALSE}
+data.frame(Rings=abalone_test$Rings, Error=abalone_test$Rings - rings_pred_rf) %>%
+  group_by(Rings) %>%
+  summarize(meanError = mean(Error)) %>%
+  ggplot(aes(x=Rings, y=meanError)) + 
+  geom_line(color='orange') +
+  geom_hline(yintercept=0, linetype='dashed', color = 'blue') +
+  labs(title='Mean prediction error by Ring: Random Forest', x='Rings', y = 'Mean ring error')
+```
 
 # Conclusion
-a conclusion section that gives a brief summary of the report, its potential impact, its limitations, and future work.
+A summary of the measured RMSE errors for different approaches that I obtained
+are in the table below.
+
+| Algorithm            | RMSE
+| :------------------- | :----
+| GLM                  | 2.160
+| KNN                  | 2.185
+| KNN with 3 features  | 2.230
+| KNN composite        | 2.191
+| Random Forest        | 2.112 
+
+I was unable to substantially lower the RMSE using different algorithms or 
+approaches. The ring prediction was only accurate in 23% of the test observations
+in the best case. This was however interesting work: it demonstrated how
+sub-populations can be significantly easier to predict than a general population,
+and also showed the issue of prevalence very clearly. It was also interesting to
+observe that an algorithm like KNN can handle sub-populations better than I 
+was expecting. 
+
+I think in future work
+I'd like to explore the prevalence issue more: looking at techniques which can handle
+a very skewed distribution of observations. I'd also like to look at the work
+of others with this dataset: since it's relatively old it has been used many 
+times in research and learning.
 
 # References
 
@@ -251,19 +392,3 @@ a conclusion section that gives a brief summary of the report, its potential imp
 - [Kepler Exoplanets](https://www.kaggle.com/datasets/keplersmachines/kepler-labelled-time-series-data)
 - [Star types](https://www.kaggle.com/datasets/deepu1109/star-dataset)
 - [Pancreatic Cancer](https://www.kaggle.com/datasets/johnjdavisiv/urinary-biomarkers-for-pancreatic-cancer) See also [Visualization talk](https://www.kaggle.com/code/johnjdavisiv/indiana-mlrc-data-visualization-in-r)
-
-
-# Delete in Final Version
-## Instructions
-
-For this project, you will be applying machine learning techniques that go beyond standard linear regression. You will have the opportunity to use a publicly available dataset to solve the problem of your choice. You are strongly discouraged from using well-known datasets, particularly ones that have been used as examples in previous courses or are similar to them (such as the iris, titanic, mnist, or movielens datasets, among others) - this is your opportunity to branch out and explore some new data! The UCI Machine Learning Repository and Kaggle are good places to seek out a dataset. Kaggle also maintains a curated list of datasets that are cleaned and ready for machine learning analyses. Your dataset must be automatically downloaded in your code or included with your submission. You may not submit the same project for both the MovieLens and Choose Your Own project submissions, and your Choose Your Own project submission may not simply be a variation of your MovieLens project.
-
-The ability to clearly communicate the process and insights gained from an analysis is an important skill for data scientists. You will submit a report that documents your analysis and presents your findings, with supporting statistics and figures. The report must be written in English and uploaded as both a PDF document and an Rmd file. Although the exact format is up to you, the report should include the following at a minimum:
-
-- an introduction/overview/executive summary section that describes the dataset and variables, and summarizes the goal of the project and key steps that were performed;
-- a methods/analysis section that explains the process and techniques used, including data cleaning, data exploration and visualization, insights gained, and your modeling approaches (you must use at least two different models or algorithms);
-- a results section that presents the modeling results and discusses the model performance; and
-- a conclusion section that gives a brief summary of the report, its potential impact, its limitations, and future work.
-
-Your project submission will be graded both by your peers and by a staff member. The peer grading will give you an opportunity to check out the projects done by other learners. You are encouraged to give your peers thoughtful, specific feedback on their projects (i.e., more than just "good job" or "not enough detail").
-
